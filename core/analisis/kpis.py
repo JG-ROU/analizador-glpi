@@ -11,11 +11,13 @@ usuario (KPI-00) llegan en la Fase 2.
 """
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from functools import partial
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from core import parametros, reloj
+from core.analisis import condiciones
 from core.analisis import estadistica as est
 from core.analisis import semaforo, sla
 from core.analisis.filtros import Filtros, filtros_permitidos
@@ -33,6 +35,19 @@ NOTA_APROXIMADO = (
 NOTA_SIN_SLA = "Defina los objetivos de SLA por prioridad en Configuración."
 
 NOMBRE_PRIORIDAD = {p.nivel: p.nombre for p in PRIORIDADES}
+
+# KPI-00: tipos de cálculo y campos de tiempo que ofrece el editor
+TIPOS_CALCULO = {
+    "CONTEO": "Conteo de tickets",
+    "PORCENTAJE": "Porcentaje (numerador / denominador)",
+    "MEDIANA_TIEMPO": "Mediana de tiempo",
+    "PROMEDIO_TIEMPO": "Promedio de tiempo",
+    "P90_TIEMPO": "P90 de tiempo",
+}
+TIPOS_TIEMPO = ("MEDIANA_TIEMPO", "PROMEDIO_TIEMPO", "P90_TIEMPO")
+CAMPOS_TIEMPO = {"horas_resolucion": "Horas de resolución", "horas_hasta_cierre": "Horas hasta el cierre"}
+UNIDAD_POR_TIPO = {"CONTEO": "tickets", "PORCENTAJE": "%", "MEDIANA_TIEMPO": "horas",
+                   "PROMEDIO_TIEMPO": "horas", "P90_TIEMPO": "horas"}
 
 
 @dataclass
@@ -126,12 +141,18 @@ class CalculadoraKPI:
         definicion = self.definiciones.get(codigo)
         if definicion is None:
             raise ErrorValidacion(f"El KPI «{codigo}» no existe o está inactivo.")
-        formula = self._formulas.get(definicion["calculo_especial"])
-        if formula is None:
-            raise ErrorValidacion(
-                f"El KPI «{definicion['nombre']}» todavía no se puede calcular "
-                "(los KPIs creados por el usuario llegan en la Fase 2)."
-            )
+        return self.calcular_definicion(definicion, periodo, filtros, comparar)
+
+    def calcular_definicion(
+        self, definicion: Mapping, periodo: Periodo, filtros: Filtros = Filtros(), comparar: bool = True
+    ) -> ResultadoKPI:
+        """Calcula una definición guardada o en edición (vista previa del editor, KPI-00)."""
+        if definicion["calculo_especial"]:
+            formula = self._formulas.get(definicion["calculo_especial"])
+            if formula is None:
+                raise ErrorValidacion(f"El KPI «{definicion['nombre']}» tiene una fórmula desconocida.")
+        else:
+            formula = partial(self._generico, definicion)
         filtros = filtros_permitidos(self.sesion, filtros)
         resultado = self._completar(formula(periodo, filtros, periodo.corte(self.ahora)), definicion)
         if comparar:
@@ -148,9 +169,55 @@ class CalculadoraKPI:
             if definicion["visible_dashboard"]
         ]
 
+    # --- KPIs creados por el usuario (KPI-00) ---
+
+    def _generico(self, definicion: Mapping, periodo: Periodo, filtros: Filtros, corte: datetime) -> ResultadoKPI:
+        """CONTEO y PORCENTAJE sobre los tickets recibidos en el período; los tiempos,
+        sobre los resueltos en el período. El numerador de un porcentaje cumple además
+        las condiciones del denominador, así que nunca supera 100 %."""
+        codigo = definicion["codigo"]
+        tipo = definicion["tipo_calculo"]
+        numerador = condiciones.leer(definicion["filtro_numerador_json"])
+        condicion_global, valores_global = filtros.sql("t")
+        base = "FROM ticket t LEFT JOIN ticket_clasificacion c ON c.ticket_id = t.id_glpi WHERE "
+
+        if tipo in TIPOS_TIEMPO:
+            campo = definicion["campo_tiempo"]
+            if campo not in CAMPOS_TIEMPO:
+                raise ErrorValidacion(f"El KPI «{definicion['nombre']}» necesita un campo de tiempo válido.")
+            condicion, valores = condiciones.a_sql(numerador)
+            filas = self.conexion.execute(
+                f"SELECT t.{campo} {base}t.fecha_solucion >= ? AND t.fecha_solucion < ?"
+                f"{condicion_global}{condicion}",
+                [_iso(periodo.inicio), _iso(periodo.fin), *valores_global, *valores],
+            ).fetchall()
+            resumen = est.resumir_tiempos((f[0] for f in filas), self.muestra_minima)
+            valor = {"MEDIANA_TIEMPO": resumen.mediana, "PROMEDIO_TIEMPO": resumen.promedio,
+                     "P90_TIEMPO": resumen.p90}[tipo]
+            return self._base(codigo, valor, cantidad=resumen.cantidad, p90=resumen.p90,
+                              notas=[est.AVISO_SIN_ESPERA])
+
+        def contar(lista: list[dict]) -> int:
+            condicion, valores = condiciones.a_sql(lista)
+            return self._escalar(
+                f"SELECT COUNT(*) {base}t.fecha_apertura >= ? AND t.fecha_apertura < ?{condicion_global}{condicion}",
+                [_iso(periodo.inicio), _iso(periodo.fin), *valores_global, *valores],
+            )
+
+        if tipo == "CONTEO":
+            cantidad = contar(numerador)
+            return self._base(codigo, float(cantidad), cantidad=cantidad)
+        if tipo == "PORCENTAJE":
+            denominador = condiciones.leer(definicion["filtro_denominador_json"])
+            base_calculo = contar(denominador)
+            parte = contar(denominador + numerador)
+            return self._base(codigo, est.porcentaje(parte, base_calculo), numerador=parte,
+                              denominador=base_calculo, cantidad=base_calculo)
+        raise ErrorValidacion(f"Tipo de cálculo no disponible: «{tipo}».")
+
     # --- Apoyo ---
 
-    def _completar(self, resultado: ResultadoKPI, definicion: sqlite3.Row) -> ResultadoKPI:
+    def _completar(self, resultado: ResultadoKPI, definicion: Mapping) -> ResultadoKPI:
         resultado = replace(
             resultado,
             nombre=definicion["nombre"],

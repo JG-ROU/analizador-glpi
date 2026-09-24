@@ -16,6 +16,7 @@ from ui.pantallas.configuracion import PantallaConfiguracion
 from ui.pantallas.dashboard import PantallaDashboard
 from ui.pantallas.historial import PantallaHistorial
 from ui.pantallas.importar import PantallaImportar
+from ui.pantallas.kpis import PantallaKPIs
 from ui.pantallas.novedades import PantallaNovedades
 from ui.pantallas.responsables import PantallaResponsables
 
@@ -34,7 +35,7 @@ class VentanaPrincipal(QMainWindow):
         clases = [PantallaDashboard]
         if sesion.es_coordinador:
             clases += [PantallaImportar, PantallaClasificacion, PantallaNovedades, PantallaResponsables,
-                       PantallaConfiguracion, PantallaHistorial]
+                       PantallaKPIs, PantallaConfiguracion, PantallaHistorial]
         elif sesion.tecnico_id is not None:
             clases += [PantallaNovedades, PantallaResponsables]
         self.pantallas = [clase(estado) for clase in clases]

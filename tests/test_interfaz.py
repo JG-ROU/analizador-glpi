@@ -19,6 +19,7 @@ from ui import estilos
 from ui.estado import EstadoApp
 from ui.pantallas import clasificacion as pantalla_clasificacion
 from ui.pantallas import configuracion as pantalla_configuracion
+from ui.pantallas import kpis as pantalla_kpis
 from ui.pantallas import dashboard, importar, inicio_sesion, novedades, responsables
 from ui.pantallas.dashboard import PantallaDashboard
 from ui.pantallas.inicio_sesion import AsistenteConfiguracion, DialogoInicioSesion
@@ -29,7 +30,7 @@ from ui.ventana_principal import VentanaPrincipal
 def sin_mensajes_modales(monkeypatch):
     mensajes = []
     for modulo in (importar, dashboard, novedades, responsables, pantalla_configuracion, inicio_sesion,
-                   pantalla_clasificacion):
+                   pantalla_clasificacion, pantalla_kpis):
         for nombre in ("mostrar_error", "mostrar_info"):
             if hasattr(modulo, nombre):
                 monkeypatch.setattr(modulo, nombre, lambda texto, padre=None, n=nombre: mensajes.append((n, texto)))
@@ -120,8 +121,8 @@ def test_menu_del_coordinador_y_todas_las_pantallas(qtbot, con_datos, coordinado
     ventana = VentanaPrincipal(EstadoApp(con_datos, coordinador))
     qtbot.addWidget(ventana)
     titulos = [ventana.menu.item(i).text() for i in range(ventana.menu.count())]
-    assert titulos == ["Dashboard", "Importar", "Clasificación", "Novedades", "Responsables", "Configuración",
-                       "Historial"]
+    assert titulos == ["Dashboard", "Importar", "Clasificación", "Novedades", "Responsables", "KPIs",
+                       "Configuración", "Historial"]
     for indice in range(ventana.menu.count()):
         ventana.menu.setCurrentRow(indice)
     ventana.menu.setCurrentRow(0)
@@ -284,6 +285,35 @@ def test_clasificacion_de_varios_tickets(qtbot, con_datos, coordinador, sin_mens
         "SELECT ticket_id, estacion_id, categoria_codigo FROM ticket_clasificacion ORDER BY ticket_id").fetchall()
     assert [tuple(f) for f in filas] == [(i, norte, "DAT-01") for i in sorted(elegidos)]
     assert pantalla.tabla.modelo.rowCount() == total  # siguen pendientes: faltan causa y tipo de solución
+
+
+def test_editor_de_kpis_crea_uno_nuevo(qtbot, con_datos, coordinador, sin_mensajes_modales):
+    pantalla = pantalla_kpis.PantallaKPIs(EstadoApp(con_datos, coordinador))
+    qtbot.addWidget(pantalla)
+    pantalla.actualizar()
+    pantalla.nuevo()
+    pantalla.nombre.setText("P1 abiertos")
+    pantalla.tipo.setCurrentIndex(pantalla.tipo.findData("CONTEO"))
+    pantalla.numerador.fijar([{"campo": "es_p1", "valor": True}])
+    pantalla.vista_previa()
+    assert "tickets" in pantalla.previa.text()
+    pantalla.guardar()
+    assert pantalla.codigo == "KPI-U01"
+    fila = con_datos.conexion.execute("SELECT * FROM kpi_definicion WHERE codigo = 'KPI-U01'").fetchone()
+    assert fila["nombre"] == "P1 abiertos" and fila["predefinido"] == 0
+
+
+def test_editor_de_kpis_predefinido_solo_umbrales(qtbot, con_datos, coordinador, sin_mensajes_modales):
+    pantalla = pantalla_kpis.PantallaKPIs(EstadoApp(con_datos, coordinador))
+    qtbot.addWidget(pantalla)
+    pantalla.actualizar()
+    pantalla.tabla.selectRow(4)  # KPI-05
+    assert pantalla.codigo == "KPI-05" and not pantalla.nombre.isEnabled()
+    pantalla.verde.setText("25")
+    pantalla.amarillo.setText("40")
+    pantalla.guardar()
+    fila = con_datos.conexion.execute("SELECT umbral_verde, umbral_amarillo FROM kpi_definicion WHERE codigo = 'KPI-05'").fetchone()
+    assert tuple(fila) == (25, 40)
 
 
 def test_historial_muestra_los_cambios(qtbot, con_datos, coordinador):

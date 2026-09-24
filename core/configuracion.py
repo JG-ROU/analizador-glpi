@@ -10,7 +10,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 from core import historial, parametros, seguridad
-from core.analisis import calendario
+from core.analisis import calendario, condiciones
+from core.analisis.kpis import CAMPOS_TIEMPO, TIPOS_CALCULO, TIPOS_TIEMPO, UNIDAD_POR_TIPO
 from core.analisis.semaforo import MAYOR_MEJOR, MENOR_MEJOR
 from core.config import NOMBRE_ARCHIVO
 from core.dominio import TURNOS_TECNICO
@@ -126,6 +127,107 @@ def actualizar_kpi(conexion: sqlite3.Connection, sesion: Sesion, codigo: str, ca
                 conexion, entidad="kpi_definicion", entidad_id=codigo, accion="MODIFICAR",
                 usuario_id=sesion.usuario_id, campo=campo, valor_anterior=fila[campo], valor_nuevo=valor,
             )
+
+
+# --- KPIs creados por el usuario (KPI-00) ---
+
+CAMPOS_KPI_PERSONALIZADO = (
+    "nombre", "descripcion", "tipo_calculo", "filtro_numerador_json", "filtro_denominador_json",
+    "campo_tiempo", "direccion", "umbral_verde", "umbral_amarillo", "meta", "visible_dashboard", "critico",
+)
+PREFIJO_PERSONALIZADO = "KPI-U"
+
+
+def definicion_kpi(datos: dict, codigo: str = "KPI-NUEVO") -> dict:
+    """Definición completa y validada a partir de lo que llena el editor.
+
+    `datos` trae las condiciones como listas en «numerador» y «denominador».
+    Sirve para guardar y para la vista previa sin guardar.
+    """
+    nombre = " ".join((datos.get("nombre") or "").split())
+    if not nombre:
+        raise ErrorValidacion("Escriba el nombre del KPI.")
+    tipo = datos.get("tipo_calculo")
+    if tipo not in TIPOS_CALCULO:
+        raise ErrorValidacion("Elija el tipo de cálculo.")
+    campo_tiempo = datos.get("campo_tiempo") if tipo in TIPOS_TIEMPO else None
+    if tipo in TIPOS_TIEMPO and campo_tiempo not in CAMPOS_TIEMPO:
+        raise ErrorValidacion("Elija el campo de tiempo.")
+    direccion = datos.get("direccion") or "INFORMATIVO"
+    if direccion not in ("MAYOR_MEJOR", "MENOR_MEJOR", "INFORMATIVO"):
+        raise ErrorValidacion("Dirección del semáforo inválida.")
+    verde, amarillo = datos.get("umbral_verde"), datos.get("umbral_amarillo")
+    if amarillo is not None and verde is None:
+        raise ErrorValidacion("Defina el umbral verde antes que el amarillo.")
+    if verde is not None and amarillo is not None:
+        if direccion == MAYOR_MEJOR and amarillo > verde:
+            raise ErrorValidacion("Si mayor es mejor, el umbral amarillo no puede superar al verde.")
+        if direccion == MENOR_MEJOR and amarillo < verde:
+            raise ErrorValidacion("Si menor es mejor, el umbral amarillo no puede ser menor que el verde.")
+    return {
+        "codigo": codigo, "nombre": nombre, "descripcion": (datos.get("descripcion") or "").strip(),
+        "tipo_calculo": tipo, "calculo_especial": None,
+        "filtro_numerador_json": condiciones.a_texto(datos.get("numerador") or []),
+        "filtro_denominador_json": condiciones.a_texto(datos.get("denominador") or []) if tipo == "PORCENTAJE" else None,
+        "campo_tiempo": campo_tiempo, "unidad": UNIDAD_POR_TIPO[tipo], "direccion": direccion,
+        "umbral_verde": verde, "umbral_amarillo": amarillo, "meta": datos.get("meta"),
+        "aproximado": int(tipo in TIPOS_TIEMPO), "critico": int(bool(datos.get("critico"))),
+        "visible_dashboard": int(bool(datos.get("visible_dashboard", True))), "predefinido": 0,
+    }
+
+
+def guardar_kpi_personalizado(
+    conexion: sqlite3.Connection, sesion: Sesion, datos: dict, codigo: str | None = None
+) -> str:
+    """Crea (sin código) o modifica un KPI creado por el usuario. Devuelve su código."""
+    seguridad.exigir_coordinador(sesion)
+    if codigo is not None:
+        fila = conexion.execute("SELECT * FROM kpi_definicion WHERE codigo = ?", (codigo,)).fetchone()
+        if fila is None:
+            raise ErrorValidacion(f"No existe el KPI «{codigo}».")
+        if fila["predefinido"]:
+            raise ErrorValidacion("Los KPIs predefinidos solo permiten cambiar umbrales, visibilidad y orden.")
+    else:
+        numeros = [
+            int(f[0][len(PREFIJO_PERSONALIZADO):]) for f in conexion.execute(
+                "SELECT codigo FROM kpi_definicion WHERE codigo LIKE ?", (PREFIJO_PERSONALIZADO + "%",)
+            )
+        ]
+        codigo = f"{PREFIJO_PERSONALIZADO}{max(numeros, default=0) + 1:02d}"
+    definicion = definicion_kpi(datos, codigo)
+    with conexion:
+        if fila_existe := conexion.execute("SELECT * FROM kpi_definicion WHERE codigo = ?", (codigo,)).fetchone():
+            for campo in CAMPOS_KPI_PERSONALIZADO + ("unidad", "aproximado"):
+                if fila_existe[campo] != definicion[campo]:
+                    conexion.execute(f"UPDATE kpi_definicion SET {campo} = ? WHERE codigo = ?",
+                                     (definicion[campo], codigo))
+                    historial.registrar(conexion, entidad="kpi_definicion", entidad_id=codigo, accion="MODIFICAR",
+                                        usuario_id=sesion.usuario_id, campo=campo,
+                                        valor_anterior=fila_existe[campo], valor_nuevo=definicion[campo])
+        else:
+            orden = conexion.execute("SELECT COALESCE(MAX(orden), 0) + 1 FROM kpi_definicion").fetchone()[0]
+            columnas = [c for c in definicion if c != "codigo"]
+            conexion.execute(
+                f"INSERT INTO kpi_definicion (codigo, orden, {', '.join(columnas)}) "
+                f"VALUES (?, ?, {', '.join('?' * len(columnas))})",
+                (codigo, orden, *(definicion[c] for c in columnas)),
+            )
+            historial.registrar(conexion, entidad="kpi_definicion", entidad_id=codigo, accion="CREAR",
+                                usuario_id=sesion.usuario_id, valor_nuevo=definicion["nombre"])
+    return codigo
+
+
+def eliminar_kpi_personalizado(conexion: sqlite3.Connection, sesion: Sesion, codigo: str) -> None:
+    seguridad.exigir_coordinador(sesion)
+    fila = conexion.execute("SELECT * FROM kpi_definicion WHERE codigo = ?", (codigo,)).fetchone()
+    if fila is None:
+        raise ErrorValidacion(f"No existe el KPI «{codigo}».")
+    if fila["predefinido"]:
+        raise ErrorValidacion("Los KPIs predefinidos no se pueden eliminar; puede ocultarlos del dashboard.")
+    with conexion:
+        conexion.execute("DELETE FROM kpi_definicion WHERE codigo = ?", (codigo,))
+        historial.registrar(conexion, entidad="kpi_definicion", entidad_id=codigo, accion="ELIMINAR",
+                            usuario_id=sesion.usuario_id, valor_anterior=fila["nombre"])
 
 
 # --- Técnicos ---

@@ -1,6 +1,6 @@
 """PAN-13: Configuración (solo coordinador). Cada cambio queda en el historial.
 
-Pestañas: parámetros, KPIs, franjas de turno, técnicos, festivos, usuarios,
+Pestañas: parámetros, franjas de turno, técnicos, estaciones, festivos, usuarios,
 respaldos y perfiles de importación.
 """
 
@@ -24,7 +24,6 @@ from core.importacion import mapeo
 from core.importacion.validacion import formato_legible
 from ui.dialogos import confirmar, mostrar_error, mostrar_info
 
-NOMBRE_DIRECCION = {"MAYOR_MEJOR": "Mayor es mejor", "MENOR_MEJOR": "Menor es mejor", "INFORMATIVO": "Informativo"}
 NOMBRE_PERFIL = {seguridad.COORDINADOR: "Coordinador", seguridad.CONSULTA: "Consulta"}
 
 
@@ -56,15 +55,6 @@ def _marcada(tabla: QTableWidget, fila: int, columna: int) -> bool:
     return tabla.item(fila, columna).checkState() == Qt.CheckState.Checked
 
 
-def _texto_numero(valor: float | None) -> str:
-    return "" if valor is None else f"{valor:g}"
-
-
-def _numero(texto: str) -> float | None:
-    texto = texto.strip().replace(",", ".")
-    return float(texto) if texto else None
-
-
 def _botonera(*botones: QPushButton) -> QHBoxLayout:
     fila = QHBoxLayout()
     for boton in botones:
@@ -81,7 +71,7 @@ class PantallaConfiguracion(QWidget):
         self.estado = estado
         self.pestanas = QTabWidget()
         for titulo, crear in (
-            ("Parámetros", self._crear_parametros), ("KPIs", self._crear_kpis), ("Turnos", self._crear_turnos),
+            ("Parámetros", self._crear_parametros), ("Turnos", self._crear_turnos),
             ("Técnicos", self._crear_tecnicos), ("Estaciones", self._crear_estaciones),
             ("Festivos", self._crear_festivos), ("Usuarios", self._crear_usuarios),
             ("Respaldos", self._crear_respaldos), ("Perfiles de importación", self._crear_perfiles),
@@ -98,7 +88,7 @@ class PantallaConfiguracion(QWidget):
         return self.estado.sesion
 
     def actualizar(self) -> None:
-        for cargar in (self._cargar_parametros, self._cargar_kpis, self._cargar_turnos, self._cargar_tecnicos,
+        for cargar in (self._cargar_parametros, self._cargar_turnos, self._cargar_tecnicos,
                        self._cargar_estaciones, self._cargar_festivos, self._cargar_usuarios, self._cargar_respaldos, self._cargar_perfiles):
             cargar()
 
@@ -150,58 +140,6 @@ class PantallaConfiguracion(QWidget):
                 cfg.actualizar_parametro(self.conexion, self.sesion, clave, texto)
             except ErrorAplicacion as error:
                 errores.append(error.mensaje)
-        self._guardado(errores)
-
-    # --- KPIs ---
-
-    def _crear_kpis(self) -> QWidget:
-        self.kpis = _tabla(["Código", "Nombre", "Dirección", "Umbral verde", "Umbral amarillo", "Meta",
-                            "Visible en dashboard", "Crítico", "Orden"])
-        guardar = QPushButton("Guardar cambios")
-        guardar.clicked.connect(self._guardar_kpis)
-        pagina = QWidget()
-        diseno = QVBoxLayout(pagina)
-        nota = QLabel("Los KPIs predefinidos no se pueden borrar; solo cambiar umbrales, visibilidad, orden y "
-                      "marca de crítico. La criticidad global es el peor semáforo entre los críticos.")
-        nota.setObjectName("nota")
-        nota.setWordWrap(True)
-        diseno.addWidget(nota)
-        diseno.addWidget(self.kpis)
-        diseno.addLayout(_botonera(guardar))
-        return pagina
-
-    def _cargar_kpis(self) -> None:
-        filas = cfg.listar_kpis(self.conexion)
-        self.kpis.setRowCount(len(filas))
-        for i, f in enumerate(filas):
-            self.kpis.setItem(i, 0, _celda(f["codigo"]))
-            self.kpis.setItem(i, 1, _celda(f["nombre"]))
-            self.kpis.setItem(i, 2, _celda(NOMBRE_DIRECCION[f["direccion"]]))
-            self.kpis.setItem(i, 3, _celda(_texto_numero(f["umbral_verde"]), editable=True))
-            self.kpis.setItem(i, 4, _celda(_texto_numero(f["umbral_amarillo"]), editable=True))
-            self.kpis.setItem(i, 5, _celda(_texto_numero(f["meta"]), editable=True))
-            self.kpis.setItem(i, 6, _casilla(bool(f["visible_dashboard"])))
-            self.kpis.setItem(i, 7, _casilla(bool(f["critico"])))
-            self.kpis.setItem(i, 8, _celda(f["orden"], editable=True))
-
-    def _guardar_kpis(self) -> None:
-        errores = []
-        for i in range(self.kpis.rowCount()):
-            codigo = self.kpis.item(i, 0).text()
-            try:
-                cambios = {
-                    "umbral_verde": _numero(self.kpis.item(i, 3).text()),
-                    "umbral_amarillo": _numero(self.kpis.item(i, 4).text()),
-                    "meta": _numero(self.kpis.item(i, 5).text()),
-                    "visible_dashboard": _marcada(self.kpis, i, 6),
-                    "critico": _marcada(self.kpis, i, 7),
-                    "orden": int(self.kpis.item(i, 8).text()),
-                }
-                cfg.actualizar_kpi(self.conexion, self.sesion, codigo, cambios)
-            except ValueError:
-                errores.append(f"{codigo}: los umbrales, la meta y el orden deben ser números.")
-            except ErrorAplicacion as error:
-                errores.append(f"{codigo}: {error.mensaje}")
         self._guardado(errores)
 
     # --- Turnos ---
