@@ -183,6 +183,14 @@ def test_encabezados_distintos_al_formato_del_perfil(tmp_path):
         list(FuenteCSV(fuente.ruta, formato=otro).obtener_tickets())
 
 
+def test_fuente_api_cumple_el_contrato_y_espera_la_fase_4():
+    from core.fuentes.fuente_api import FuenteAPI
+    fuente = FuenteAPI("https://glpi.ejemplo.test/apirest.php")
+    assert isinstance(fuente, FuenteDatos)
+    with pytest.raises(ErrorAplicacion, match="Fase 4"):
+        list(fuente.obtener_tickets())
+
+
 def test_seguimientos_llegan_en_fase_3(tmp_path):
     with pytest.raises(ErrorAplicacion, match="Fase 3"):
         FuenteCSV(escribir(tmp_path, LINEA_REAL)).obtener_seguimientos([1])

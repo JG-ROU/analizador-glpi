@@ -223,6 +223,29 @@ def test_ca07_dashboard_en_menos_de_2_segundos(qtbot, contexto, coordinador, tmp
     assert pantalla.tarjetas.count() == 14
 
 
+def test_ca15_importacion_grande_no_congela_la_interfaz(qtbot, contexto, coordinador, tmp_path, sin_mensajes_modales):
+    from PySide6.QtCore import QTimer
+
+    tickets = gen.generar_tickets(20000, datetime(2021, 9, 1), datetime(2026, 9, 20), semilla=12)
+    ruta = gen.escribir_csv(gen.filas_en(tickets, datetime(2026, 9, 21)), tmp_path / "volumen.csv")
+    pantalla = importar.PantallaImportar(EstadoApp(contexto, coordinador))
+    qtbot.addWidget(pantalla)
+    pantalla.cargar_archivo(ruta)
+    pantalla.validar()
+    qtbot.waitUntil(lambda: pantalla.resultado is not None, timeout=60000)
+    avances, latidos = [], []
+    pantalla.progreso.valueChanged.connect(avances.append)
+    reloj_ui = QTimer()
+    reloj_ui.timeout.connect(lambda: latidos.append(1))
+    reloj_ui.start(50)
+    pantalla.importar()
+    assert pantalla.progreso.isVisibleTo(pantalla)
+    qtbot.waitUntil(lambda: any(n == "mostrar_info" for n, _ in sin_mensajes_modales), timeout=120000)
+    reloj_ui.stop()
+    assert len(avances) >= 10 and max(avances) == 20000  # la barra avanzó bloque a bloque
+    assert len(latidos) >= 5  # el bucle de eventos siguió atendiendo mientras se importaba
+
+
 # --- PAN-04 y PAN-05 ---
 
 def test_novedades_y_detalle(qtbot, con_datos, coordinador, monkeypatch):

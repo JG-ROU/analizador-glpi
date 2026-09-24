@@ -206,6 +206,15 @@ def test_reportes_de_fase_2_en_los_tres_formatos(datos, coordinador, tmp_path, c
         assert codigo in texto
 
 
+def test_pdf_con_celdas_enormes_no_falla(tmp_path):
+    from core.reportes.formatos import Hoja, Reporte, Tabla, escribir_pdf
+    tickets = ", ".join(str(n) for n in range(100000, 103000))
+    tabla = Tabla("Hallazgos", pd.DataFrame({"Regla": ["HAL-05"] * 50, "Tickets": [tickets] * 50}))
+    ruta = escribir_pdf(Reporte("Prueba", {"Usuario": "X"}, [Hoja("H", [tabla])]), tmp_path / "grande.pdf")
+    _, texto = texto_pdf(ruta)
+    assert "ver el Excel" in " ".join(texto.split())
+
+
 def test_rep08_segmov_guarda_la_distribucion(datos, coordinador, tmp_path):
     from core import clasificacion as cl
     norte = cl.guardar_estacion(datos, coordinador, nombre="Norte")

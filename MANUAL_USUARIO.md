@@ -1,4 +1,4 @@
-# Manual de usuario – Analizador GLPI (Fase 1)
+# Manual de usuario – Analizador GLPI (Fases 1 y 2)
 
 ## 1. Instalación
 
@@ -12,7 +12,7 @@
 | `data\analizador.db` | Base de datos con toda la información |
 | `data\respaldos\` | Copias de seguridad automáticas |
 | `logs\app.log` | Registro técnico de errores |
-| `exportaciones\` | Reportes y tablas exportadas, por mes |
+| `exportaciones\` | Reportes, tablas exportadas y borradores de correo, por mes |
 
 El aplicativo funciona sin internet. Los datos quedan solo en este equipo.
 
@@ -20,80 +20,102 @@ El aplicativo funciona sin internet. Los datos quedan solo en este equipo.
 
 El asistente pide:
 
-1. **Coordinador:** su nombre y un PIN de 4 a 12 dígitos. El coordinador administra todo y crea a los demás usuarios.
-2. **Franjas de turno:** el horario de cada turno para clasificar la hora de apertura de los tickets. No pueden solaparse y deben cubrir las 24 horas. Por defecto: Mañana 06:00–14:00, Tarde 14:00–22:00 y Nocturno 22:00–06:00. "Día Intermedio" no es franja de apertura: se asigna a cada técnico en Configuración.
+1. **Coordinador:** su nombre y un PIN de 4 a 12 dígitos.
+2. **Franjas de turno:** el horario de cada turno para clasificar la hora de apertura de los tickets. No pueden solaparse y deben cubrir las 24 horas. "Día Intermedio" no es franja de apertura: se asigna a cada técnico en Configuración.
 3. **Prioridades y SLA:**
    - **Prioridad P1:** por defecto "Mayor".
-   - **Objetivo de SLA en horas por prioridad:** si todavía no lo tiene definido, déjelo vacío. El indicador de SLA avisará que falta.
-   - **Horas "sin actualizar" por prioridad:** a partir de cuántas horas sin movimiento un ticket abierto se considera desatendido.
+   - **Objetivo de SLA en horas por prioridad:** si no lo tiene definido, déjelo vacío.
+   - **Horas "sin actualizar" por prioridad.**
 
 Todo se puede cambiar después en **Configuración**.
 
 ## 3. Iniciar sesión
 
-Elija su usuario y escriba su PIN. Después de 5 intentos fallidos seguidos, el sistema pide esperar antes de volver a intentar (30 s, luego 60 s, y así hasta 5 minutos). No bloquea la cuenta. Si olvida su PIN, el coordinador puede asignarle uno nuevo.
+Elija su usuario y escriba su PIN. Después de 5 intentos fallidos seguidos, el sistema pide esperar (30 s, luego 60 s, y así hasta 5 minutos). Si olvida su PIN, el coordinador le asigna uno nuevo.
 
 | Perfil | Qué ve |
 |---|---|
-| Coordinador | Todo: importar, configurar, métricas de todos los técnicos y reportes |
-| Consulta con técnico asociado | Dashboard del equipo, sus propios tickets en Novedades y sus propias métricas en Responsables |
-| Consulta sin técnico (jefatura) | Solo el Dashboard del equipo |
+| Coordinador | Todo |
+| Consulta con técnico asociado | Dashboard, sus propios tickets en Novedades, Estaciones, Tipificaciones, sus propias métricas en Responsables y los reportes del equipo |
+| Consulta sin técnico (jefatura) | Dashboard, Estaciones, Tipificaciones y los reportes del equipo, sin métricas individuales |
 
-## 4. Exportar desde GLPI
+## 4. Avisos al iniciar y campana
 
-En GLPI, haga la búsqueda de tickets y expórtela a **CSV**. El analizador está preparado para las 10 columnas que trae su exportación: ID, Título, Entidad, Estado, Autor, Asignado a – Técnico, Fecha de Apertura, Última actualización, Prioridad y Ubicación.
+Debajo de la barra superior aparece una **barra de avisos** cuando hay algo pendiente:
 
-**Importe a diario.** El CSV solo trae el estado actual de cada ticket, así que el analizador detecta los escalamientos, soluciones, cierres y reaperturas comparando una importación con la anterior. Si pasan varios días entre importaciones, se pierden los cambios intermedios; por ejemplo, un ticket que se escaló y volvió en ese lapso. Cuando la última importación tiene más de un día, la fecha aparece en **rojo** en la barra superior. El número de días se cambia en Configuración (`dias_importacion_desactualizada`).
+| Aviso | Cuándo aparece |
+|---|---|
+| **NOT-01** | La última importación es de hace más de 1 día (se cambia en el parámetro `dias_importacion_desactualizada`). |
+| **NOT-02** | Hay hallazgos nuevos de severidad ALTA. |
+| **NOT-03** | El paquete mensual del mes anterior no se ha generado (solo coordinador). |
 
-## 5. Importar
+El botón "Ir a…" lleva a la pantalla correspondiente. La **campana** muestra cuántos hallazgos nuevos de severidad ALTA hay; al pulsarla se abre la pantalla de Hallazgos.
 
-1. **Elegir archivo CSV…** El sistema detecta la codificación, el separador, las columnas y el formato de fecha.
-   - Si ya hay un perfil guardado para esas columnas, lo usa.
-   - Si el archivo ya se importó antes, lo avisa y no lo vuelve a cargar.
-   - Si las fechas admiten día/mes y mes/día, le pide confirmar el formato.
+## 5. Exportar desde GLPI e importar
+
+En GLPI, haga la búsqueda de tickets y expórtela a **CSV**. El analizador está preparado para las 10 columnas de su exportación.
+
+**Importe a diario.** El CSV solo trae el estado actual de cada ticket, así que el analizador detecta los escalamientos, soluciones, cierres y reaperturas comparando una importación con la anterior.
+
+En la pantalla **Importar**:
+1. **Elegir archivo CSV…** Se detecta el formato y se usa el perfil guardado si existe. Si el archivo ya se importó, se avisa.
 2. **Revise la asociación de columnas.** Los campos con * son obligatorios.
 3. **Validar vista previa.** Cada fila queda:
    - **verde:** válida;
-   - **amarillo:** con advertencia, pero se carga (por ejemplo, un ticket sin técnico asignado);
-   - **rojo:** con error, no se carga. El motivo aparece en la columna "Motivos": fecha inválida, ID vacío, estado desconocido, etc.
-4. **Estados o prioridades nuevos:** si el archivo trae un valor que el perfil no conoce, por ejemplo un estado nuevo en GLPI, aparece en el recuadro "Estados y prioridades que el perfil no conoce". Asócielo al estado o nivel equivalente y vuelva a validar. La asociación queda guardada en el perfil.
-5. **Importar filas válidas.** Antes de cargar se hace un respaldo automático. Al final verá un resumen con los tickets nuevos, los actualizados, los que no cambiaron, las filas con error y los eventos detectados.
-6. **Exportar filas con error** genera un CSV con los valores originales y el motivo, para corregirlos.
+   - **amarillo:** con advertencia, pero se carga;
+   - **rojo:** con error, no se carga.
 
-En la parte inferior está el **historial de importaciones**.
+   Si aparecen estados o prioridades desconocidos, asócielos y vuelva a validar.
+4. **Importar filas válidas.** Antes se hace un respaldo automático. Al terminar se ejecutan solos:
+   - los **hallazgos**;
+   - los **snapshots** de los meses y semanas ya cerrados;
+   - los avisos **NOT-02** y **NOT-05** (KPI crítico en rojo), que aparecen en el resumen.
+5. **Exportar filas con error** genera un CSV con el motivo de cada una.
 
-## 6. Barra superior
+## 6. Clasificación (coordinador)
 
-- **Período:** semana, mes o rango de fechas. Los indicadores se calculan para ese período y se comparan con el anterior.
-- **Turno:** filtra por el turno en que se abrió el ticket.
-- **Última importación:** en rojo si está desactualizada.
-- **Campana de alertas:** se habilita en la Fase 2.
+La exportación no trae estación, categoría, causa ni tipo de solución. Se asignan aquí con listas desplegables:
+
+1. **Ver:** "Pendientes de clasificar" (primero los resueltos) o "Todos los recibidos en el período".
+2. **Seleccionar:** uno o varios tickets (Ctrl o Mayús + clic).
+3. **Asignar:** elija los valores que quiera en Estación, Categoría (las 62 del catálogo), Causa y Tipo de solución. "(no cambiar)" deja el valor actual y "(quitar el valor)" lo borra.
+4. **Aplicar a los seleccionados.**
+
+**Sugerir estación desde Ubicación…** propone la estación del catálogo cuyo nombre coincide con el último nivel de la Ubicación de GLPI. Se asigna solo si usted confirma.
+
+La clasificación **no se pierde al reimportar**, y cada cambio queda en el Historial. Las estaciones se crean en **Configuración > Estaciones**.
 
 ## 7. Dashboard
 
-- **Tarjetas de indicadores:** cada una muestra el valor, el semáforo con ícono y texto (✔ Verde, ▲ Amarillo, ✖ Rojo, ℹ Informativo) y la variación frente al período anterior. Al pasar el mouse sobre una tarjeta se ve su fórmula, la base de cálculo, la meta y las notas.
-  - **≈** indica un valor aproximado: la fecha de solución se toma de la importación en que el ticket apareció resuelto.
-  - **⚠ muestra pequeña** indica que el cálculo se hizo con menos de 10 tickets (se cambia en Configuración).
-- **Criticidad global:** el peor semáforo entre los indicadores críticos, que por defecto son Total gestionados, Tasa de escalamiento, SLA y Resueltos sin cerrar.
+- **Tarjetas:** una por indicador, con valor, semáforo (✔ Verde, ▲ Amarillo, ✖ Rojo, ℹ Informativo) y variación frente al período anterior (pts = puntos porcentuales). Al pasar el mouse se ve la fórmula y las notas.
+  - **≈** indica un valor aproximado.
+  - **⚠ muestra pequeña** indica menos de 10 tickets.
+- **Criticidad global:** el peor semáforo entre los indicadores críticos.
+- **Hallazgos nuevos:** conteo por severidad y los más recientes.
 - **Gráficos:**
-  - recibidos frente a resueltos por semana;
+  - recibidos frente a resueltos;
   - backlog;
   - abiertos por prioridad;
   - recibidos por estado;
   - carga por técnico;
   - brecha frente a la meta.
-- **REP-01 en Excel / CSV:** genera el Resumen de indicadores en `exportaciones\AAAA-MM\`.
+- **REP-01 en Excel / CSV:** acceso rápido al reporte.
 
-### Cómo se calculan los indicadores principales
+### Indicadores
 
 | Indicador | Cálculo |
 |---|---|
-| Total gestionados (KPI-04) | (soluciones + escalamientos del período) / tickets recibidos en el período × 100. Se cuentan **eventos**: un ticket escalado dos veces cuenta dos. Puede superar 100 %. |
-| Tasa de escalamiento (KPI-05) | escalamientos / (soluciones + escalamientos) × 100. Verde hasta 20 %, amarillo hasta 35 %, rojo por encima. |
-| Tiempo de resolución (KPI-06) | Mediana de horas entre la apertura y la solución (el P90 aparece en la ayuda). Se usa la mediana porque unos pocos casos muy largos distorsionan el promedio. |
-| Cumplimiento SLA (KPI-07) | Resueltos dentro del objetivo de su prioridad / resueltos con objetivo definido. |
-| Resueltos sin cerrar (KPI-08) | De los resueltos en el período, los que siguen sin cierre después de 2 días. Depende del visto bueno del autor: es informativo. |
-| Sin actualizar (KPI-16) | Abiertos sin movimiento por más horas que el umbral de su prioridad. |
+| KPI-04 Total gestionados | (soluciones + escalamientos del período) / recibidos × 100. Un ticket escalado dos veces cuenta dos. Puede superar 100 %. |
+| KPI-05 Tasa de escalamiento | escalamientos / (soluciones + escalamientos) × 100. Verde hasta 20 %, amarillo hasta 35 %. |
+| KPI-06 Tiempo de resolución | Mediana de horas (P90 en la ayuda). |
+| KPI-07 Cumplimiento SLA | Resueltos dentro del objetivo de su prioridad / resueltos con objetivo. |
+| KPI-08 Resueltos sin cerrar | De los resueltos en el período, los que siguen sin cierre después de 2 días. Depende del visto bueno del autor. |
+| KPI-09 Completitud de clasificación | Resueltos con estación, categoría, causa y tipo de solución asignados / resueltos. |
+| KPI-10 Uso de «Otros» | Tickets clasificados en OTR-01 / tickets con categoría. |
+| KPI-11 Reincidencia | Tickets cuyo caso (estación + título) ya había ocurrido en los 7 días anteriores. |
+| KPI-12 Reaperturas | Reaperturas / resueltos. |
+| KPI-16 Sin actualizar | Abiertos sin movimiento por más horas que el umbral de su prioridad. |
+| KPI-17 Tiempo en escalado | Mediana de horas que un ticket pasa escalado. |
 
 Los tiempos no descuentan la espera, porque la exportación no la trae.
 
@@ -103,48 +125,114 @@ Es la lista de tickets abiertos y de los recibidos en el período. Tiene accesos
 - sin actualizar más del plazo;
 - resueltos sin cerrar;
 - P1 abiertos;
-- escalados antiguos (5 días por defecto).
+- escalados antiguos.
 
-Puede filtrar por estado, prioridad y técnico. **Doble clic** en un ticket abre su detalle: datos, línea de tiempo de eventos y cambios detectados entre importaciones.
+**Doble clic** en un ticket abre su detalle: datos, línea de tiempo de eventos y cambios detectados.
 
-## 9. Responsables
+## 9. Hallazgos (coordinador)
 
-Muestra las métricas de cada técnico en el período: carga actual, atendidos, soluciones, escalamientos, tiempos, SLA, resueltos sin cerrar, reaperturas y tickets sin actualizar. Al hacer clic en un técnico se ve su gráfico de atendidos por semana.
+Son alertas automáticas. Se generan después de cada importación, al iniciar y con **Detectar ahora**.
 
-- **La cantidad de tickets es informativa (carga), no una calificación.**
-- El usuario de consulta solo ve su propia fila.
-- **REP-03 en Excel / CSV** genera el reporte de responsables.
+| Regla | Qué detecta |
+|---|---|
+| HAL-01 Caso repetido | El mismo título (sin números ni tildes) en la misma estación: 3 o más veces en una semana, o 5 o más en un mes. |
+| HAL-02 Pico por estación | Semana muy por encima de la media de las 8 anteriores. |
+| HAL-03 Categoría en crecimiento | Mes con 1,5 veces el promedio de los 3 anteriores. |
+| HAL-04 Sin seguimiento | Abierto sin actualización por más del plazo de su prioridad. |
+| HAL-05 Resuelto sin cerrar | Por técnico. |
+| HAL-06 Escalado estancado | Más de 5 días escalado (ALTA si pasa de 10). |
+| HAL-07 P1 abierto | Cualquier P1 abierto. |
+| HAL-08 Sobrecarga | Técnico con muchos más abiertos que el equipo. |
+| HAL-09 Tickets sin clasificar | Resueltos a los que les falta clasificación. |
+| HAL-10 Semáforo en rojo | KPI crítico en rojo. |
+| HAL-11 Reapertura | Ticket reabierto. |
+| HAL-12 Importación desactualizada | La última importación es demasiado antigua. |
 
-## 10. Tablas y exportación
+**Marcar revisado…** y **Descartar…** piden un comentario, obligatorio al descartar, y quedan en el Historial. Un hallazgo descartado no vuelve a aparecer como nuevo. Los de situación actual (P1 abierto, sin seguimiento…) se **cierran solos** cuando la situación termina. **Ver tickets relacionados** muestra los tickets del hallazgo; con doble clic se abre cada uno.
 
-Todas las tablas permiten:
-- ordenar haciendo clic en el encabezado;
-- buscar en todas las columnas o en una;
-- exportar a Excel o CSV lo que se ve en pantalla.
+## 10. Estaciones y Tipificaciones
 
-La casilla **"Anonimizar personas al exportar"** reemplaza los nombres de autores y técnicos por "Persona 001", "Persona 002"… Úsela cuando el archivo vaya a compartirse fuera del equipo.
+Usan la estación y la categoría asignadas en Clasificación.
 
-## 11. Configuración (coordinador)
+- **Estaciones:**
+  - ranking por volumen, reincidencia, tiempo de resolución y abiertos;
+  - al hacer clic en una estación: su tendencia semanal, sus familias más frecuentes y sus casos repetidos;
+  - pestaña con el **mapa de calor** estación × familia.
+- **Tipificaciones:**
+  - distribución por familia;
+  - tendencia mensual por familia;
+  - categorías del período;
+  - variación frente al promedio de 3 meses;
+  - uso de OTR-01 y tickets sin categoría.
+
+## 11. Responsables
+
+Muestra las métricas de cada técnico en el período. **La cantidad de tickets es informativa (carga), no una calificación.** El usuario de consulta solo ve su propia fila. **REP-03** genera el reporte.
+
+## 12. Reportes
+
+Elija el reporte, el formato (**PDF**, **Excel** o **CSV**) y pulse **Generar reporte**. Se usan el período y los filtros de la barra superior. El archivo queda en `exportaciones\AAAA-MM\`, y **Abrir archivo** lo abre.
+
+| Reporte | Contenido |
+|---|---|
+| REP-01 | Resumen de indicadores |
+| REP-02 | Estaciones |
+| REP-03 | Responsables |
+| REP-04 | Tipificaciones |
+| REP-05 | Hallazgos |
+| REP-08 | Distribución de horas SEGMOV (coordinador): escriba el **total de horas del mes**. Se reparten entre las estaciones marcadas "Incluir en SEGMOV" según sus casos, y la suma da siempre el total exacto. Generarlo guarda la distribución del mes. |
+| REP-09 | SLA: cumplimiento por prioridad, cliente, familia y técnico; tickets fuera de SLA o en riesgo; tendencia de 6 meses |
+| REP-11 | Datos para auditoría (coordinador) |
+
+**Anonimizar autores y técnicos** reemplaza los nombres por "Persona 001", "Persona 002"… Úsela al compartir fuera del equipo. En el PDF, los textos muy largos se recortan; el Excel los trae completos.
+
+### Paquete mensual (coordinador)
+
+**Generar paquete mensual…** pide el resumen ejecutivo y el plan de mejora, y crea:
+- un **PDF** y un **Excel** con: resumen ejecutivo, indicadores, SLA, tendencias de 6 meses, los 5 casos más repetidos, hallazgos, SEGMOV (si ya generó REP-08 para ese mes) y plan de mejora;
+- un **borrador de correo** (`.eml`) con el PDF adjunto, que se abre en Outlook para revisar y enviar. El destinatario es el parámetro `correo_jefatura`. El aplicativo no envía nada por su cuenta.
+
+Tras generarlo, el aviso NOT-03 desaparece. **Borrador de correo: hallazgos ALTA** prepara un correo con los hallazgos nuevos de severidad alta.
+
+## 13. KPIs (coordinador)
+
+- **KPIs predefinidos:** se cambian sus umbrales verde y amarillo, la meta, la visibilidad en el dashboard y la marca de crítico. No se pueden eliminar.
+- **Nuevo KPI:**
+  1. Escriba el nombre y elija el tipo: conteo, porcentaje, o mediana, promedio o P90 de tiempo.
+  2. Agregue condiciones con **Agregar condición…**, por ejemplo "Familia de categoría: REC" y "Tiene causa: No". No se escribe código.
+  3. En un porcentaje, las condiciones del denominador definen la base.
+  4. **Vista previa** muestra el valor en el período actual sin guardar; **Guardar** lo agrega al dashboard.
+- **Tendencia de 12 meses:** aparece al elegir un KPI, tomada de los snapshots. **Generar snapshot del período** guarda los valores del mes o la semana elegidos.
+
+## 14. Tablas y exportación
+
+Todas las tablas permiten ordenar, buscar en todas las columnas o en una, y exportar a Excel o CSV lo que se ve. La casilla **"Anonimizar personas al exportar"** reemplaza los nombres de personas.
+
+## 15. Configuración (coordinador)
 
 | Pestaña | Para qué |
 |---|---|
-| Parámetros | Umbrales y valores editables: muestra mínima, prioridad P1, días para alertas, objetivos de SLA, horas sin actualizar y umbrales del tiempo de resolución. Pase el mouse por la descripción para verla completa. |
-| KPIs | Umbrales verde y amarillo, meta, visibilidad en el dashboard, orden y marca de crítico |
-| Turnos | Franjas de apertura. Al guardar se actualiza `config.ini` y se recalcula el turno de los tickets existentes. |
-| Técnicos | Se crean solos al importar. Complete el nombre a mostrar y el turno; desmarque "Activo" o "Incluir en ranking" cuando corresponda. |
-| Festivos | Agregar o eliminar festivos. "Proponer festivos de Colombia" calcula los de ley del año; revíselos antes de confirmar. |
+| Parámetros | Umbrales y valores editables, incluidos los de hallazgos, el porcentaje "en riesgo" del SLA y `correo_jefatura` |
+| Turnos | Franjas de apertura. Al guardar se actualiza `config.ini` y se recalcula el turno de los tickets. |
+| Técnicos | Nombre a mostrar, turno, activo e incluir en ranking |
+| Estaciones | Catálogo de estaciones: nombre, cliente, incluir en SEGMOV y activa |
+| Festivos | Agregar, eliminar o proponer los festivos de ley de Colombia del año |
 | Usuarios | Crear usuarios, activarlos o desactivarlos y restablecer su PIN |
-| Respaldos | Crear un respaldo manual o restaurar uno. Antes de restaurar, se respalda la base actual. |
-| Perfiles de importación | Ver y eliminar perfiles. Uno que ya se usó en importaciones no se puede eliminar. |
+| Respaldos | Crear un respaldo manual o restaurar uno (antes se respalda la base actual) |
+| Perfiles de importación | Ver y eliminar perfiles |
 
-**Cambiar la prioridad P1** recalcula qué tickets son P1 y su tipo de caso.
+## 16. Historial
 
-## 12. Historial
+Es la auditoría de los cambios manuales:
+- parámetros, KPIs, técnicos y estaciones;
+- clasificación de tickets y hallazgos revisados;
+- usuarios, festivos, turnos y perfiles;
+- importaciones, snapshots, SEGMOV y restauraciones.
 
-Es la auditoría de los cambios manuales: parámetros, KPIs, técnicos, usuarios, festivos, turnos, perfiles, importaciones y restauraciones. Muestra quién hizo cada cambio, cuándo, y el valor antes y después. La base de datos impide modificar o borrar estos registros.
+La base de datos impide modificar o borrar estos registros.
 
-## 13. Respaldos y problemas
+## 17. Respaldos y problemas
 
-- **Respaldos automáticos:** antes de cada importación y uno diario. Se conservan 30 días (`retencion_respaldos` en `config.ini`).
-- **Mensajes de error:** aparecen en español. El detalle técnico queda en `logs\app.log`; envíelo a soporte si el problema persiste.
-- **Si `config.ini` tiene un error**, el aplicativo lo indica al abrir y dice qué valor corregir. Si lo borra, se vuelve a crear con los valores por defecto.
+- **Respaldos automáticos:** antes de cada importación y uno diario. Se conservan 30 días.
+- **Mensajes de error:** aparecen en español. El detalle queda en `logs\app.log`.
+- **Si `config.ini` tiene un error**, el aplicativo indica qué corregir. Si lo borra, se vuelve a crear.

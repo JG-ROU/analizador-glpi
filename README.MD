@@ -2,17 +2,26 @@
 
 Aplicativo de escritorio portable para Windows que convierte las exportaciones CSV de **GLPI 9.1.4** en indicadores confiables para un equipo de soporte de aplicaciones 24/7. Funciona sin internet y guarda los datos solo en el equipo, en una base SQLite.
 
-**Estado:** Fase 1 terminada (importación, base de datos, KPIs, dashboard, novedades, responsables, configuración, historial y reportes REP-01 y REP-03). Las Fases 2 y 3 están descritas en [spec/docs/12_fases_y_criterios_de_aceptacion.md](spec/docs/12_fases_y_criterios_de_aceptacion.md).
+**Estado:** Fases 1 y 2 terminadas. La Fase 3 (calidad de soporte) está descrita en [spec/docs/12_fases_y_criterios_de_aceptacion.md](spec/docs/12_fases_y_criterios_de_aceptacion.md).
 
-## Qué hace (Fase 1)
+## Qué hace
 
+**Fase 1: importación, base y dashboard**
 - **Importa** la exportación de tickets de GLPI con autodetección de columnas, separador, codificación y formato de fecha. Guarda perfiles reutilizables y valida cada fila (verde / amarillo / rojo).
 - **Detecta cambios entre importaciones:** escalamientos, soluciones, cierres, reaperturas, reasignaciones y cambios de prioridad. La exportación trae solo el estado actual; ver `spec/docs/03`, IMP-06.
-- **Calcula KPIs** con semáforo, variación frente al período anterior y criticidad global: recibidos, resueltos, backlog, total gestionados, tasa de escalamiento, tiempo de resolución, SLA, resueltos sin cerrar, sin actualizar y tiempo en escalado.
-- **Pantallas:** Dashboard, Importar, Novedades con detalle de ticket, Responsables, Configuración e Historial.
-- **Reportes** REP-01 (Resumen de indicadores) y REP-03 (Responsables) en Excel y CSV.
+- **Calcula KPIs** con semáforo, variación frente al período anterior y criticidad global.
 - **Seguridad:** PIN con hash para todos los usuarios y permisos por perfil aplicados en la lógica. Un técnico solo ve sus propias métricas.
 - **Respaldo automático** antes de cada importación y uno diario, con restauración desde la interfaz. Historial de cambios de solo inserción.
+
+**Fase 2: análisis, hallazgos, SLA y reportes**
+- **Clasificación manual:** estación, categoría, causa y tipo de solución se asignan con listas desplegables después de importar. La exportación no los trae. La clasificación sobrevive a las reimportaciones.
+- **KPIs creados por el usuario:** editor visual con vista previa. Los filtros se guardan como JSON y se traducen a SQL parametrizado.
+- **Hallazgos automáticos HAL-01 a HAL-12:** se revisan o descartan con comentario.
+- **Análisis:** estaciones, tipificaciones, SLA por ticket, snapshot mensual y semanal con tendencias.
+- **Reportes** REP-01 a REP-05, REP-08 (SEGMOV), REP-09 y REP-11 en PDF, Excel y CSV, con opción de anonimizar.
+- **Paquete mensual y avisos:** paquete mensual en PDF y Excel con borrador de correo `.eml`, y avisos NOT-01, 02, 03 y 05.
+
+**Pantallas:** Dashboard, Importar, Clasificación, Novedades, Hallazgos, Estaciones, Tipificaciones, Responsables, Reportes, KPIs, Configuración e Historial.
 
 ## Requisitos para desarrollar
 
@@ -52,10 +61,13 @@ core/                   lógica sin Qt (se prueba sin interfaz)
   config.py, rutas.py, registro.py, reloj.py, turnos.py, seguridad.py, historial.py,
   parametros.py, configuracion.py, dominio.py, errores.py
   db/                   conexión, migraciones versionadas (migraciones/NNN_*.sql), semillas, respaldos
-  fuentes/              FuenteDatos (interfaz) y fuente_csv.py
+  fuentes/              FuenteDatos (interfaz), fuente_csv.py y fuente_api.py (Fase 4)
   importacion/          mapeo, validación, derivados, eventos y carga incremental
-  analisis/             períodos, estadística, filtros, KPIs, semáforo, SLA, series, novedades, responsables
-  reportes/             gráficos (matplotlib), Excel/CSV y catálogo REP-01 / REP-03
+  analisis/             períodos, estadística, filtros y condiciones, KPIs, semáforo, SLA, series, novedades,
+                        responsables, hallazgos, snapshot, distribución (estaciones y tipificaciones), SEGMOV
+  reportes/             gráficos (matplotlib), Excel/PDF/CSV, catálogo de reportes y paquete mensual
+  clasificacion.py      clasificación manual de tickets y catálogo de estaciones (IMP-07)
+  notificaciones.py     avisos NOT-01, 02, 03 y 05; correo.py: borradores .eml
 ui/                     PySide6: ventana, pantallas, componentes, hilos de trabajo
 assets/estilos/         estilo QSS corporativo
 data/muestras/          generador de CSV ficticios en formato GLPI

@@ -158,12 +158,14 @@ class PantallaKPIs(QWidget):
         self.codigo: str | None = None
         self.predefinido = False
 
-        self.tabla = QTableWidget(0, 5)
-        self.tabla.setHorizontalHeaderLabels(["Código", "Nombre", "Tipo", "Visible", "Origen"])
+        self.tabla = QTableWidget(0, 4)
+        self.tabla.setHorizontalHeaderLabels(["Código", "Nombre", "Visible", "Origen"])
         self.tabla.verticalHeader().setVisible(False)
         self.tabla.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.tabla.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.tabla.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        encabezado = self.tabla.horizontalHeader()
+        encabezado.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        encabezado.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.tabla.itemSelectionChanged.connect(self._elegido)
         nuevo = QPushButton("Nuevo KPI")
         nuevo.clicked.connect(self.nuevo)
@@ -241,7 +243,7 @@ class PantallaKPIs(QWidget):
         divisor = QSplitter()
         divisor.addWidget(izquierda)
         divisor.addWidget(derecha)
-        divisor.setSizes([420, 760])
+        divisor.setSizes([560, 700])
         QVBoxLayout(self).addWidget(divisor)
         self.nuevo()
 
@@ -256,9 +258,8 @@ class PantallaKPIs(QWidget):
             codigo.setData(Qt.ItemDataRole.UserRole, dict(f))
             self.tabla.setItem(i, 0, codigo)
             self.tabla.setItem(i, 1, QTableWidgetItem(f["nombre"]))
-            self.tabla.setItem(i, 2, QTableWidgetItem(TIPOS_CALCULO.get(f["tipo_calculo"], f["tipo_calculo"])))
-            self.tabla.setItem(i, 3, QTableWidgetItem("Sí" if f["visible_dashboard"] else "No"))
-            self.tabla.setItem(i, 4, QTableWidgetItem("Predefinido" if f["predefinido"] else "Creado por el usuario"))
+            self.tabla.setItem(i, 2, QTableWidgetItem("Sí" if f["visible_dashboard"] else "No"))
+            self.tabla.setItem(i, 3, QTableWidgetItem("Predefinido" if f["predefinido"] else "Usuario"))
 
     def _elegido(self) -> None:
         filas = self.tabla.selectionModel().selectedRows()

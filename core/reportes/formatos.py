@@ -117,12 +117,21 @@ FUENTE_PDF = "DejaVu"
 ANCHO_IMAGEN_MM = 170
 
 
+MAXIMO_CARACTERES_CELDA_PDF = 300
+
+
 def _texto_pdf(valor) -> str:
+    """Texto de una celda del PDF. Los textos muy largos (por ejemplo, listas de miles de
+    tickets) se recortan para que la fila quepa en una página; Excel y CSV los traen completos."""
     if valor is None or (not isinstance(valor, str) and pd.isna(valor)):
         return ""
     if isinstance(valor, float):
         return f"{round(valor, 2):g}"
-    return str(valor)
+    texto = str(valor)
+    if len(texto) > MAXIMO_CARACTERES_CELDA_PDF:
+        omitidos = len(texto) - MAXIMO_CARACTERES_CELDA_PDF
+        texto = f"{texto[:MAXIMO_CARACTERES_CELDA_PDF]}… (+{omitidos} caracteres; ver el Excel)"
+    return texto
 
 
 class _Pdf(FPDF):
