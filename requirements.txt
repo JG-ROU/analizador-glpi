@@ -7,3 +7,4 @@ bcrypt>=4.1
 pyinstaller>=6.3
 pytest>=8.0
 pytest-qt>=4.3
+pypdf>=4.0

@@ -167,7 +167,74 @@ def test_reporte_o_formato_inexistente(datos, coordinador, tmp_path):
     with pytest.raises(ErrorValidacion):
         catalogo.generar(solicitud(datos, coordinador, tmp_path), "REP-99", catalogo.EXCEL)
     with pytest.raises(ErrorValidacion):
-        catalogo.generar(solicitud(datos, coordinador, tmp_path), "REP-01", "PDF")
+        catalogo.generar(solicitud(datos, coordinador, tmp_path), "REP-01", "WORD")
+
+
+# --- PDF (CA-13) y reportes de la Fase 2 ---
+
+def texto_pdf(ruta):
+    from pypdf import PdfReader
+    lector = PdfReader(ruta)
+    return lector, "\n".join(pagina.extract_text() for pagina in lector.pages)
+
+
+def test_ca13_pdf_rep01_con_filtros_fecha_usuario_graficos_y_paginacion(datos, coordinador, tmp_path):
+    filtros = Filtros(turno="Mañana")
+    ruta = catalogo.generar(solicitud(datos, coordinador, tmp_path, filtros=filtros), "REP-01", catalogo.PDF)
+    lector, texto = texto_pdf(ruta)
+    assert "REP-01 Resumen de indicadores" in texto
+    assert "Filtros: Turno: Mañana" in texto
+    assert "Generado: 05/10/2026 12:00" in texto and "Usuario: Coordinador" in texto
+    assert f"Página 1 de {len(lector.pages)}" in texto
+    assert "✔ Verde" in texto and "✖ Rojo" in texto
+    imagenes = sum(len(pagina.images) for pagina in lector.pages)
+    assert imagenes == 2
+
+
+@pytest.mark.parametrize("codigo", ["REP-02", "REP-03", "REP-04", "REP-05", "REP-09", "REP-11"])
+@pytest.mark.parametrize("formato", [catalogo.PDF, catalogo.EXCEL, catalogo.CSV])
+def test_reportes_de_fase_2_en_los_tres_formatos(datos, coordinador, tmp_path, codigo, formato):
+    from core import clasificacion as cl
+    from core.analisis import hallazgos
+    norte = cl.guardar_estacion(datos, coordinador, nombre="Norte", cliente="Cliente A")
+    cl.clasificar(datos, coordinador, [11, 12, 13, 14], {cl.ESTACION: norte, cl.CATEGORIA: "REC-01"})
+    hallazgos.detectar(datos, ahora=AHORA)
+    ruta = catalogo.generar(solicitud(datos, coordinador, tmp_path), codigo, formato)
+    assert ruta.exists() and ruta.stat().st_size > 0
+    if formato == catalogo.PDF:
+        _, texto = texto_pdf(ruta)
+        assert codigo in texto
+
+
+def test_rep08_segmov_guarda_la_distribucion(datos, coordinador, tmp_path):
+    from core import clasificacion as cl
+    norte = cl.guardar_estacion(datos, coordinador, nombre="Norte")
+    sur = cl.guardar_estacion(datos, coordinador, nombre="Sur")
+    cl.clasificar(datos, coordinador, [11, 12, 13], {cl.ESTACION: norte})
+    cl.clasificar(datos, coordinador, [14], {cl.ESTACION: sur})
+    ruta = catalogo.generar(solicitud(datos, coordinador, tmp_path, total_horas=100), "REP-08", catalogo.CSV)
+    tabla = pd.read_csv(ruta, sep=";", encoding="utf-8-sig")
+    assert dict(zip(tabla["Estación"], tabla["Horas"])) == {"Norte": 75.0, "Sur": 25.0}
+
+
+def test_reportes_solo_coordinador(datos, consulta, tmp_path):
+    for codigo in ("REP-08", "REP-11"):
+        with pytest.raises(ErrorPermiso):
+            catalogo.generar(solicitud(datos, consulta, tmp_path, total_horas=100), codigo, catalogo.PDF)
+    assert {r.codigo for r in catalogo.disponibles(consulta)} == {"REP-01", "REP-02", "REP-03", "REP-04", "REP-05", "REP-09"}
+
+
+def test_rep11_anonimizado(datos, coordinador, tmp_path):
+    ruta = catalogo.generar(solicitud(datos, coordinador, tmp_path, anonimizar=True), "REP-11", catalogo.CSV)
+    tabla = pd.read_csv(ruta, sep=";", encoding="utf-8-sig", dtype=str)
+    assert tabla["Técnico"].str.startswith("Persona").all() and tabla["Autor"].str.startswith("Persona").all()
+    assert len(tabla) == 10
+
+
+def test_rep09_fuera_de_sla(datos, coordinador, tmp_path):
+    ruta = catalogo.generar(solicitud(datos, coordinador, tmp_path), "REP-09", catalogo.EXCEL)
+    celdas = {c.value for f in load_workbook(ruta)["SLA"].iter_rows() for c in f}
+    assert "Tickets fuera de SLA o en riesgo" in celdas and "✖ Incumplido" in celdas
 
 
 # --- Anonimización (IMP-05, RNF-08) ---

@@ -48,7 +48,7 @@ class DetalleTicket:
     eventos: list[dict]
 
 
-def _restriccion(conexion: sqlite3.Connection, sesion: Sesion) -> tuple[str, list]:
+def restriccion_tickets(conexion: sqlite3.Connection, sesion: Sesion) -> tuple[str, list]:
     """Condición SQL que limita los tickets visibles por la sesión."""
     if sesion.es_coordinador:
         return "", []
@@ -77,7 +77,7 @@ def listar(
     ahora = ahora or reloj.ahora()
     if filtros.tecnico_id is not None:
         seguridad.tecnico_permitido(sesion, filtros.tecnico_id)
-    restriccion, valores_restriccion = _restriccion(conexion, sesion)
+    restriccion, valores_restriccion = restriccion_tickets(conexion, sesion)
     condicion, valores = filtros.sql("t")
     if acceso == TODOS:
         where = f"({ABIERTOS} OR (t.fecha_apertura >= ? AND t.fecha_apertura < ?))"
@@ -143,7 +143,7 @@ def _horas_desde(texto: str, ahora: datetime) -> float:
 
 
 def detalle(conexion: sqlite3.Connection, sesion: Sesion, id_glpi: int) -> DetalleTicket:
-    restriccion, valores = _restriccion(conexion, sesion)
+    restriccion, valores = restriccion_tickets(conexion, sesion)
     fila = conexion.execute(
         "SELECT t.*, k.nombre_mostrar AS tecnico FROM ticket t "
         "LEFT JOIN tecnico k ON k.id = t.tecnico_principal_id "

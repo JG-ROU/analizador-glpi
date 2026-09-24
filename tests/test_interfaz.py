@@ -122,7 +122,7 @@ def test_menu_del_coordinador_y_todas_las_pantallas(qtbot, con_datos, coordinado
     qtbot.addWidget(ventana)
     titulos = [ventana.menu.item(i).text() for i in range(ventana.menu.count())]
     assert titulos == ["Dashboard", "Importar", "Clasificación", "Novedades", "Hallazgos", "Estaciones",
-                       "Tipificaciones", "Responsables", "KPIs", "Configuración", "Historial"]
+                       "Tipificaciones", "Responsables", "Reportes", "KPIs", "Configuración", "Historial"]
     for indice in range(ventana.menu.count()):
         ventana.menu.setCurrentRow(indice)
     ventana.menu.setCurrentRow(0)
@@ -140,7 +140,7 @@ def test_consulta_ve_solo_sus_pantallas_y_metricas(qtbot, con_datos, coordinador
     ventana = VentanaPrincipal(EstadoApp(con_datos, sesion))
     qtbot.addWidget(ventana)
     assert [ventana.menu.item(i).text() for i in range(ventana.menu.count())] == [
-        "Dashboard", "Novedades", "Estaciones", "Tipificaciones", "Responsables",
+        "Dashboard", "Novedades", "Estaciones", "Tipificaciones", "Responsables", "Reportes",
     ]
     ventana.menu.setCurrentRow(4)
     tabla = ventana.pantallas[4].tabla
@@ -155,7 +155,7 @@ def test_jefatura_solo_ve_indicadores_agregados(qtbot, con_datos, coordinador):
     ventana = VentanaPrincipal(EstadoApp(con_datos, sesion))
     qtbot.addWidget(ventana)
     assert [ventana.menu.item(i).text() for i in range(ventana.menu.count())] == [
-        "Dashboard", "Estaciones", "Tipificaciones"]
+        "Dashboard", "Estaciones", "Tipificaciones", "Reportes"]
     for indice in (1, 2):
         ventana.menu.setCurrentRow(indice)
 
@@ -342,6 +342,21 @@ def test_pantalla_de_hallazgos(qtbot, con_datos, coordinador, sin_mensajes_modal
     ventana = VentanaPrincipal(estado)
     qtbot.addWidget(ventana)
     assert ventana.campana.text().startswith("🔔")
+
+
+def test_pantalla_de_reportes_genera_pdf(qtbot, con_datos, coordinador):
+    from ui.pantallas.reportes import PantallaReportes
+
+    pantalla = PantallaReportes(EstadoApp(con_datos, coordinador))
+    qtbot.addWidget(pantalla)
+    pantalla.actualizar()
+    assert pantalla.lista.count() == 8
+    pantalla.lista.setCurrentRow(0)
+    pantalla.generar()
+    qtbot.waitUntil(lambda: pantalla.ultimo is not None, timeout=20000)
+    assert pantalla.ultimo.suffix == ".pdf" and pantalla.ultimo.exists()
+    pantalla.lista.setCurrentRow(5)  # REP-08
+    assert pantalla.formulario.isRowVisible(pantalla.horas)
 
 
 def test_historial_muestra_los_cambios(qtbot, con_datos, coordinador):

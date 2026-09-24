@@ -1,30 +1,36 @@
-"""Catálogo de reportes de la Fase 1: REP-01 y REP-03 en Excel y CSV (spec 09).
+"""Catálogo de reportes (spec 09): REP-01 a REP-05, REP-08, REP-09 y REP-11.
 
+Formatos: PDF (fpdf2, con encabezado, filtros, fecha, usuario y paginación),
+Excel (openpyxl, con tablas y gráficos como imagen) y CSV (la tabla principal).
 Los reportes se guardan en exportaciones/AAAA-MM/ (mes de generación) con el
 código, el período y la fecha y hora de generación en el nombre.
 """
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-from core import reloj
+from core import parametros, reloj, seguridad
+from core.analisis import distribucion, hallazgos, responsables, segmov, semaforo, series, sla, snapshot
 from core.analisis import estadistica as est
-from core.analisis import responsables, semaforo, series
 from core.analisis.filtros import Filtros, filtros_permitidos
 from core.analisis.kpis import NOMBRE_PRIORIDAD, CalculadoraKPI, ResultadoKPI, criticidad_global
+from core.analisis.novedades import restriccion_tickets
 from core.analisis.periodos import Periodo
-from core.errores import ErrorValidacion
+from core.dominio import NOMBRE_TIPO_CASO
+from core.errores import ErrorPermiso, ErrorValidacion
 from core.reportes import graficos
-from core.reportes.formatos import Hoja, Reporte, Tabla, escribir_csv, escribir_excel
+from core.reportes.formatos import Hoja, Reporte, Tabla, anonimizar, escribir_csv, escribir_excel, escribir_pdf
 from core.seguridad import Sesion
 
+PDF = "PDF"
 EXCEL = "EXCEL"
 CSV = "CSV"
-EXTENSIONES = {EXCEL: "xlsx", CSV: "csv"}
+EXTENSIONES = {PDF: "pdf", EXCEL: "xlsx", CSV: "csv"}
+COLUMNAS_PERSONALES = ("Autor", "Técnico")
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,7 @@ class DefinicionReporte:
     nombre: str
     descripcion: str
     solo_coordinador: bool
+    pide_horas: bool = False
 
 
 REPORTES = (
@@ -43,10 +50,43 @@ REPORTES = (
         solo_coordinador=False,
     ),
     DefinicionReporte(
+        "REP-02", "Estaciones",
+        "Ranking por volumen, reincidencia y tiempo; familias por estación y casos repetidos.",
+        solo_coordinador=False,
+    ),
+    DefinicionReporte(
         "REP-03", "Responsables – operativo",
         "Carga, atendidos, tiempos, SLA, resueltos sin cerrar y reaperturas por técnico. "
         "Un usuario de consulta obtiene solo sus propias métricas.",
         solo_coordinador=False,
+    ),
+    DefinicionReporte(
+        "REP-04", "Tipificaciones",
+        "Distribución por familia y categoría, tendencia por familia, categorías en crecimiento y OTR-01.",
+        solo_coordinador=False,
+    ),
+    DefinicionReporte(
+        "REP-05", "Hallazgos",
+        "Hallazgos del período por regla y severidad, estado de revisión y casos repetidos.",
+        solo_coordinador=False,
+    ),
+    DefinicionReporte(
+        "REP-08", "Distribución de horas SEGMOV",
+        "Horas del mes repartidas entre las estaciones incluidas en SEGMOV según sus casos. "
+        "Al generarlo se guarda la distribución del mes.",
+        solo_coordinador=True, pide_horas=True,
+    ),
+    DefinicionReporte(
+        "REP-09", "SLA",
+        "Cumplimiento por prioridad, cliente, técnico y familia; tickets fuera de SLA o en riesgo; "
+        "tendencia de 6 meses.",
+        solo_coordinador=False,
+    ),
+    DefinicionReporte(
+        "REP-11", "Datos para auditoría",
+        "Tickets del período con campos derivados, clasificación, SLA y eventos, para revisión externa "
+        "o el libro de control.",
+        solo_coordinador=True,
     ),
 )
 REPORTES_POR_CODIGO = {r.codigo: r for r in REPORTES}
@@ -58,23 +98,36 @@ class SolicitudReporte:
     sesion: Sesion
     periodo: Periodo
     carpeta_exportaciones: Path
-    filtros: Filtros = Filtros()
+    filtros: Filtros = field(default_factory=Filtros)
     ahora: datetime | None = None
+    total_horas: float | None = None  # REP-08
+    anonimizar: bool = False  # IMP-05, RNF-08
+
+
+def disponibles(sesion: Sesion) -> list[DefinicionReporte]:
+    return [r for r in REPORTES if sesion.es_coordinador or not r.solo_coordinador]
 
 
 def generar(solicitud: SolicitudReporte, codigo: str, formato: str) -> Path:
     """Genera el reporte y devuelve la ruta del archivo creado."""
-    if codigo not in REPORTES_POR_CODIGO:
+    definicion = REPORTES_POR_CODIGO.get(codigo)
+    if definicion is None:
         raise ErrorValidacion(f"El reporte «{codigo}» no existe.")
     if formato not in EXTENSIONES:
-        raise ErrorValidacion("Elija el formato Excel o CSV.")
+        raise ErrorValidacion("Elija el formato PDF, Excel o CSV.")
+    if definicion.solo_coordinador:
+        seguridad.exigir_coordinador(solicitud.sesion)
     solicitud.filtros = filtros_permitidos(solicitud.sesion, solicitud.filtros)
     ahora = solicitud.ahora or reloj.ahora()
-    reporte = {"REP-01": _rep01, "REP-03": _rep03}[codigo](solicitud, ahora)
-    nombre = (
-        f"{codigo}_{solicitud.periodo.codigo}_{ahora:%Y%m%d_%H%M%S}.{EXTENSIONES[formato]}"
-    )
+    reporte = CONSTRUCTORES[codigo](solicitud, ahora)
+    if solicitud.anonimizar:
+        for hoja in reporte.hojas:
+            for tabla in hoja.tablas:
+                tabla.datos = anonimizar(tabla.datos, COLUMNAS_PERSONALES)
+    nombre = f"{codigo}_{solicitud.periodo.codigo}_{ahora:%Y%m%d_%H%M%S}.{EXTENSIONES[formato]}"
     ruta = solicitud.carpeta_exportaciones / f"{ahora:%Y-%m}" / nombre
+    if formato == PDF:
+        return escribir_pdf(reporte, ruta)
     if formato == EXCEL:
         return escribir_excel(reporte, ruta)
     return escribir_csv(reporte.hojas[0].tablas[0], ruta)
@@ -96,7 +149,16 @@ def describir_filtros(conexion: sqlite3.Connection, filtros: Filtros) -> str:
     if filtros.estados:
         partes.append("Estado: " + ", ".join(series.NOMBRE_ESTADO[e] for e in filtros.estados))
     if filtros.tipos_caso:
-        partes.append("Tipo de caso: " + ", ".join(filtros.tipos_caso))
+        partes.append("Tipo de caso: " + ", ".join(NOMBRE_TIPO_CASO[t] for t in filtros.tipos_caso))
+    if filtros.estaciones:
+        marcas = ", ".join("?" * len(filtros.estaciones))
+        nombres = [f[0] for f in conexion.execute(f"SELECT nombre FROM estacion WHERE id IN ({marcas})",
+                                                   filtros.estaciones)]
+        partes.append("Estación: " + ", ".join(nombres))
+    for etiqueta, valores in (("Cliente", filtros.clientes), ("Familia", filtros.familias),
+                              ("Categoría", filtros.categorias), ("Causa", filtros.causas)):
+        if valores:
+            partes.append(f"{etiqueta}: " + ", ".join(valores))
     return "; ".join(partes) or "Sin filtros"
 
 
@@ -228,3 +290,217 @@ def _rep03(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
         [Hoja("Responsables", [Tabla("Métricas por técnico", datos)],
               [graficos.a_png(graficos.carga_por_tecnico(carga))], notas)],
     )
+
+
+# --- REP-02 ---
+
+def _rep02(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
+    c, s, p, f = solicitud.conexion, solicitud.sesion, solicitud.periodo, solicitud.filtros
+    ranking = distribucion.ranking_estaciones(c, s, p, f, ahora).drop(columns=["_id"])
+    mapa = distribucion.mapa_calor(c, s, p, f)
+    repetidos = []
+    for nombre in ranking["Estación"]:
+        if nombre != distribucion.SIN_ESTACION:
+            tabla = distribucion.casos_repetidos_de_estacion(c, nombre)
+            tabla.insert(0, "Estación", nombre)
+            repetidos.append(tabla)
+    casos = pd.concat(repetidos, ignore_index=True) if repetidos else pd.DataFrame(
+        columns=["Estación", "Período", "Severidad", "Caso", "Veces", "Tendencia", "Tickets"])
+    tablas = [Tabla("Ranking de estaciones", ranking)]
+    if not mapa.empty:
+        tablas.append(Tabla("Familias por estación", mapa.reset_index().rename(columns={"estacion": "Estación"})))
+    tablas.append(Tabla("Casos repetidos abiertos (HAL-01)", casos))
+    return Reporte("REP-02 Estaciones", _encabezado(solicitud, ahora), [Hoja(
+        "Estaciones", tablas, [graficos.a_png(graficos.mapa_calor(mapa))],
+        ["Según la estación asignada en la clasificación manual.", "Tiempos aproximados. " + est.AVISO_SIN_ESPERA + "."],
+    )])
+
+
+# --- REP-04 ---
+
+def _rep04(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
+    c, s, p, f = solicitud.conexion, solicitud.sesion, solicitud.periodo, solicitud.filtros
+    familias = distribucion.distribucion_familias(c, s, p, f)
+    tendencia = distribucion.tendencia_familias(c, s, p, filtros=f)
+    otros = CalculadoraKPI(c, s, ahora).calcular("KPI-10", p, f, comparar=False)
+    tablas = [
+        Tabla("Distribución por familia", pd.DataFrame(
+            [{"Familia": k, "Tickets": v} for k, v in familias.items()], columns=["Familia", "Tickets"])),
+        Tabla("Categorías", distribucion.distribucion_categorias(c, s, p, f)),
+        Tabla("Categorías frente al promedio de 3 meses", distribucion.categorias_que_crecen(c, s, p, f)),
+        Tabla("Tendencia mensual por familia", tendencia.reset_index().rename(columns={"index": "Mes"})),
+    ]
+    notas = [
+        f"Uso de OTR-01 (KPI-10): {formatear_valor(otros, otros.valor)} · {semaforo.etiqueta(otros.semaforo)}",
+        f"Tickets sin categoría asignada: {familias.get(distribucion.SIN_CATEGORIA, 0)}",
+        "Según la categoría asignada en la clasificación manual.",
+    ]
+    imagenes = [graficos.a_png(graficos.barras(familias, "Tickets por familia")),
+                graficos.a_png(graficos.lineas(tendencia, "Tendencia mensual por familia"))]
+    return Reporte("REP-04 Tipificaciones", _encabezado(solicitud, ahora), [Hoja("Tipificaciones", tablas, imagenes, notas)])
+
+
+# --- REP-05 ---
+
+def _rep05(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
+    todos = hallazgos.listar(solicitud.conexion, solicitud.sesion, estados=())
+    inicio, fin = f"{solicitud.periodo.inicio:%Y-%m-%d %H:%M}", f"{solicitud.periodo.fin:%Y-%m-%d %H:%M}"
+    del_periodo = todos[(todos["Detectado"] < fin) & (todos["Actualizado"] >= inicio)]
+    resumen = (del_periodo.groupby(["Regla", "Severidad"]).size().unstack(fill_value=0)
+               .reindex(columns=[hallazgos.ALTA, hallazgos.MEDIA, hallazgos.BAJA], fill_value=0).reset_index())
+    estados = del_periodo.groupby("Estado").size().reset_index(name="Hallazgos")
+    repetidos = (del_periodo[del_periodo["Regla"].str.startswith("HAL-01")]
+                 .assign(Veces=lambda t: t["Tickets"].str.count(",") + 1)
+                 .sort_values("Veces", ascending=False).head(5))
+    tablas = [
+        Tabla("Hallazgos del período por regla y severidad", resumen),
+        Tabla("Estado de revisión", estados),
+        Tabla("Los 5 casos más repetidos", repetidos[["Entidad", "Período", "Veces", "Tickets"]]),
+        Tabla("Detalle de hallazgos", del_periodo.drop(columns=["ID"])),
+    ]
+    return Reporte("REP-05 Hallazgos", _encabezado(solicitud, ahora), [Hoja("Hallazgos", tablas)])
+
+
+# --- REP-08 ---
+
+def _rep08(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
+    filas = segmov.guardar(solicitud.conexion, solicitud.sesion, solicitud.periodo, solicitud.total_horas)
+    tabla = segmov.tabla(filas)
+    grafico = graficos.barras({f.estacion: f.horas for f in filas}, "Horas asignadas por estación")
+    notas = [
+        f"Total de horas del mes: {solicitud.total_horas:g}. Casos del mes: {sum(f.casos for f in filas)}.",
+        "horas = REDONDEAR(total × casos de la estación / casos totales; 1). La diferencia de redondeo "
+        "se ajusta en la estación con mayor residuo para que la suma sea exacta.",
+        "Solo entran las estaciones marcadas «Incluir en SEGMOV»; los casos son los tickets del mes con esa "
+        "estación asignada.",
+    ]
+    return Reporte("REP-08 Distribución de horas SEGMOV", _encabezado(solicitud, ahora),
+                   [Hoja("SEGMOV", [Tabla("Distribución de horas", tabla)], [graficos.a_png(grafico)], notas)])
+
+
+# --- REP-09 ---
+
+def detalle_sla(conexion: sqlite3.Connection, sesion: Sesion, periodo: Periodo, filtros: Filtros,
+                ahora: datetime) -> pd.DataFrame:
+    """Tickets resueltos en el período y abiertos al corte, con su estado SLA."""
+    restriccion, valores_restriccion = restriccion_tickets(conexion, sesion)
+    condicion, valores = filtros.sql("t")
+    corte = periodo.corte(ahora)
+    objetivos = sla.objetivos(conexion)
+    riesgo = parametros.decimal_opcional(conexion, "sla_riesgo_porcentaje") or 80
+    filas = conexion.execute(
+        "SELECT t.*, k.nombre_mostrar AS tecnico FROM ticket t LEFT JOIN tecnico k ON k.id = t.tecnico_principal_id "
+        "WHERE ((t.fecha_solucion >= ? AND t.fecha_solucion < ?) OR (t.fecha_apertura < ? AND "
+        "t.estado_codigo NOT IN ('RESUELTO', 'CERRADO')))" + condicion + restriccion + " ORDER BY t.fecha_apertura",
+        [periodo.inicio.isoformat(sep=" "), periodo.fin.isoformat(sep=" "), corte.isoformat(sep=" "),
+         *valores, *valores_restriccion],
+    ).fetchall()
+    registros = []
+    for f in filas:
+        solucion = datetime.fromisoformat(f["fecha_solucion"]) if f["fecha_solucion"] else None
+        estado, horas = sla.estado(datetime.fromisoformat(f["fecha_apertura"]), solucion,
+                                   objetivos.get(f["prioridad_nivel"]), corte, riesgo)
+        registros.append({
+            "ID": f["id_glpi"], "Título": f["titulo"], "Prioridad": f["prioridad"], "Técnico": f["tecnico"],
+            "Apertura": f["fecha_apertura"][:16], "Solución ≈": (f["fecha_solucion"] or "")[:16],
+            "Horas ≈": horas, "Objetivo (h)": objetivos.get(f["prioridad_nivel"]), "Estado SLA": sla.NOMBRES[estado],
+        })
+    return pd.DataFrame(registros, columns=["ID", "Título", "Prioridad", "Técnico", "Apertura", "Solución ≈",
+                                            "Horas ≈", "Objetivo (h)", "Estado SLA"])
+
+
+def _rep09(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
+    c, s, p, f = solicitud.conexion, solicitud.sesion, solicitud.periodo, solicitud.filtros
+    calc = CalculadoraKPI(c, s, ahora)
+
+    def cumplimiento(etiqueta: str, grupos: list[tuple[str, Filtros]]) -> Tabla:
+        filas = []
+        for nombre, filtros in grupos:
+            r = calc.calcular("KPI-07", p, filtros, comparar=False)
+            if r.denominador:
+                filas.append({etiqueta: nombre, "Resueltos con objetivo": int(r.denominador),
+                              "A tiempo": int(r.numerador), "% SLA": r.valor, "Semáforo": semaforo.etiqueta(r.semaforo)})
+        return Tabla(f"Cumplimiento por {etiqueta.lower()}",
+                     pd.DataFrame(filas, columns=[etiqueta, "Resueltos con objetivo", "A tiempo", "% SLA", "Semáforo"]),
+                     columna_semaforo="Semáforo")
+
+    def con(**cambios) -> Filtros:
+        return replace(f, **cambios)
+
+    global_ = calc.calcular("KPI-07", p, f, comparar=False)
+    tablas = [
+        cumplimiento("Prioridad", [(NOMBRE_PRIORIDAD[n], con(prioridades=(n,))) for n in sorted(NOMBRE_PRIORIDAD, reverse=True)]),
+        cumplimiento("Cliente", [(cl, con(clientes=(cl,))) for (cl,) in
+                                 c.execute("SELECT DISTINCT cliente FROM estacion WHERE cliente IS NOT NULL ORDER BY 1")]),
+        cumplimiento("Familia", [(fa, con(familias=(fa,))) for (fa,) in
+                                 c.execute("SELECT DISTINCT familia FROM categoria ORDER BY 1")]),
+    ]
+    try:
+        tecnicos = responsables.tecnicos_visibles(c, s)
+        tablas.append(cumplimiento("Técnico", [(t["nombre_mostrar"], con(tecnico_id=t["id"])) for t in tecnicos]))
+    except ErrorPermiso:
+        pass  # jefatura: sin detalle por técnico
+    try:
+        detalle = detalle_sla(c, s, p, f, ahora)
+        fuera = detalle[detalle["Estado SLA"].isin([sla.NOMBRES[sla.INCUMPLIDO], sla.NOMBRES[sla.EN_RIESGO]])]
+        tablas.insert(0, Tabla("Tickets fuera de SLA o en riesgo", fuera))
+    except ErrorPermiso:
+        pass
+    puntos = snapshot.tendencia(c, "KPI-07", cantidad=6)
+    notas = [
+        f"Cumplimiento global del período: {formatear_valor(global_, global_.valor)} · {semaforo.etiqueta(global_.semaforo)}",
+        "Objetivo por prioridad según los parámetros sla_horas_*; sin fecha de vencimiento en la exportación.",
+        "Tiempos aproximados. " + est.AVISO_SIN_ESPERA + ".",
+    ]
+    if all(v is None for v in sla.objetivos(c).values()):
+        notas.insert(0, "No hay objetivos de SLA definidos: configúrelos en Configuración > Parámetros.")
+    return Reporte("REP-09 SLA", _encabezado(solicitud, ahora), [Hoja(
+        "SLA", tablas, [graficos.a_png(graficos.tendencia(puntos, "Tendencia de cumplimiento SLA (6 meses)", "%"))],
+        notas)])
+
+
+# --- REP-11 ---
+
+def _rep11(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
+    c, p = solicitud.conexion, solicitud.periodo
+    condicion, valores = solicitud.filtros.sql("t")
+    objetivos = sla.objetivos(c)
+    filas = c.execute(
+        "SELECT t.*, k.nombre_mostrar AS tecnico, e.nombre AS estacion, e.cliente, cl.categoria_codigo, "
+        "cl.causa_codigo, cl.tipo_solucion_codigo, "
+        "(SELECT COUNT(*) FROM ticket_evento v WHERE v.ticket_id = t.id_glpi AND v.tipo = 'ESCALAMIENTO') AS escalamientos, "
+        "(SELECT COUNT(*) FROM ticket_evento v WHERE v.ticket_id = t.id_glpi AND v.tipo = 'REAPERTURA') AS reaperturas "
+        "FROM ticket t LEFT JOIN tecnico k ON k.id = t.tecnico_principal_id "
+        "LEFT JOIN ticket_clasificacion cl ON cl.ticket_id = t.id_glpi LEFT JOIN estacion e ON e.id = cl.estacion_id "
+        "WHERE t.fecha_apertura >= ? AND t.fecha_apertura < ?" + condicion + " ORDER BY t.id_glpi",
+        [p.inicio.isoformat(sep=" "), p.fin.isoformat(sep=" "), *valores],
+    ).fetchall()
+    registros = []
+    for f in filas:
+        solucion = datetime.fromisoformat(f["fecha_solucion"]) if f["fecha_solucion"] else None
+        estado_sla, _ = sla.estado(datetime.fromisoformat(f["fecha_apertura"]), solucion,
+                                   objetivos.get(f["prioridad_nivel"]), p.corte(ahora), 80)
+        registros.append({
+            "ID": f["id_glpi"], "Título": f["titulo"], "Estado": f["estado"], "Prioridad": f["prioridad"],
+            "P1": "Sí" if f["es_p1"] else "No", "Técnico": f["tecnico"], "Autor": f["autor"],
+            "Apertura": f["fecha_apertura"][:16], "Turno": f["turno_apertura"],
+            "Última actualización": f["ultima_actualizacion"][:16],
+            "Solución ≈": (f["fecha_solucion"] or "")[:16], "Cierre ≈": (f["fecha_cierre"] or "")[:16],
+            "Horas resolución ≈": f["horas_resolucion"], "Horas hasta cierre ≈": f["horas_hasta_cierre"],
+            "Tipo de caso": NOMBRE_TIPO_CASO[f["tipo_caso"]], "Escalamientos": f["escalamientos"],
+            "Reaperturas": f["reaperturas"], "Estación": f["estacion"], "Cliente": f["cliente"],
+            "Categoría": f["categoria_codigo"], "Causa": f["causa_codigo"],
+            "Tipo de solución": f["tipo_solucion_codigo"], "Estado SLA": sla.NOMBRES[estado_sla],
+            "Entidad (GLPI)": f["entidad"], "Ubicación (GLPI)": f["ubicacion"],
+        })
+    datos = pd.DataFrame(registros)
+    notas = ["Fechas de solución y cierre aproximadas (detectadas entre importaciones). "
+             "Las evaluaciones de calidad se agregan en la Fase 3."]
+    return Reporte("REP-11 Datos para auditoría", _encabezado(solicitud, ahora),
+                   [Hoja("Auditoría", [Tabla("Tickets del período", datos)], [], notas)])
+
+
+CONSTRUCTORES = {
+    "REP-01": _rep01, "REP-02": _rep02, "REP-03": _rep03, "REP-04": _rep04,
+    "REP-05": _rep05, "REP-08": _rep08, "REP-09": _rep09, "REP-11": _rep11,
+}

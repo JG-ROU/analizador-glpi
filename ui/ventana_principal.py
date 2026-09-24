@@ -25,6 +25,7 @@ from ui.pantallas.historial import PantallaHistorial
 from ui.pantallas.importar import PantallaImportar
 from ui.pantallas.kpis import PantallaKPIs
 from ui.pantallas.novedades import PantallaNovedades
+from ui.pantallas.reportes import PantallaReportes
 from ui.pantallas.responsables import PantallaResponsables
 
 TODOS_LOS_TURNOS = "Todos los turnos"
@@ -43,12 +44,13 @@ class VentanaPrincipal(QMainWindow):
         clases = [PantallaDashboard]
         if sesion.es_coordinador:
             clases += [PantallaImportar, PantallaClasificacion, PantallaNovedades, PantallaHallazgos,
-                       PantallaEstaciones, PantallaTipificaciones, PantallaResponsables, PantallaKPIs,
-                       PantallaConfiguracion, PantallaHistorial]
+                       PantallaEstaciones, PantallaTipificaciones, PantallaResponsables, PantallaReportes,
+                       PantallaKPIs, PantallaConfiguracion, PantallaHistorial]
         elif sesion.tecnico_id is not None:
-            clases += [PantallaNovedades, PantallaEstaciones, PantallaTipificaciones, PantallaResponsables]
+            clases += [PantallaNovedades, PantallaEstaciones, PantallaTipificaciones, PantallaResponsables,
+                       PantallaReportes]
         else:
-            clases += [PantallaEstaciones, PantallaTipificaciones]
+            clases += [PantallaEstaciones, PantallaTipificaciones, PantallaReportes]
         self.pantallas = [clase(estado) for clase in clases]
         self._pendientes = set(range(len(self.pantallas)))
 
