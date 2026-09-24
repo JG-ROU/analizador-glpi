@@ -20,14 +20,6 @@ def crear_tecnico(bd, nombre):
 
 
 @pytest.fixture
-def coordinador(bd):
-    usuario_id = seguridad.crear_usuario(
-        bd, None, nombre="Coordinador", perfil=COORDINADOR, pin=PIN_COORD
-    )
-    return seguridad.iniciar_sesion(bd, usuario_id, PIN_COORD)
-
-
-@pytest.fixture
 def equipo(bd, coordinador):
     """Dos técnicos con usuario de consulta y un usuario de jefatura sin técnico."""
     t1, t2 = crear_tecnico(bd, "Tecnico 1"), crear_tecnico(bd, "Tecnico 2")

@@ -54,6 +54,9 @@ PRIORIDADES = (
 )
 MAPEO_PRIORIDADES_GLPI = {p.nombre: p.nivel for p in PRIORIDADES}
 
+# Turnos que se asignan a un técnico (glosario). "Día Intermedio" no es franja de apertura.
+TURNOS_TECNICO = ("Mañana", "Día Intermedio", "Tarde", "Nocturno")
+
 # Tipos de caso del estándar de documentación
 GESTION = "GESTION"
 ESCALAMIENTO = "ESCALAMIENTO"
@@ -72,3 +75,12 @@ TIPOS_CASO = (
     CAMBIO,
     ACTIVIDAD,
 )
+NOMBRE_TIPO_CASO = {
+    GESTION: "Gestión",
+    ESCALAMIENTO: "Escalamiento",
+    SOLICITUD: "Solicitud",
+    CRITICO_P1: "Crítico P1",
+    ESPERA_EXTERNA: "En espera externa",
+    CAMBIO: "Cambio/despliegue",
+    ACTIVIDAD: "Actividad programada",
+}

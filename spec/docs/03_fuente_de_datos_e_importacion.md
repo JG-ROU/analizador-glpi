@@ -65,7 +65,7 @@ Ejemplo con datos ficticios, tal como queda en el archivo (visto con un editor d
 
 ## IMP-03 – Importación incremental e historial de cambios
 - **Clave:** `id_glpi`. Si el ticket ya existe, se actualiza.
-- **Orden de los archivos:** si la fila trae una última actualización **anterior o igual** a la guardada, no se actualiza. Así, importar un archivo viejo después de uno nuevo no hace retroceder los datos.
+- **Orden de los archivos:** si la fila trae una última actualización **anterior** a la guardada, no se actualiza. Así, importar un archivo viejo después de uno nuevo no hace retroceder los datos. Si la fecha es **igual**, solo se actualiza cuando los datos del ticket cambiaron: GLPI registra la hora sin segundos, y un cambio hecho en el mismo minuto de la exportación anterior no debe perderse.
 - **Historial de cambios:** por cada ticket actualizado se guardan en `ticket_cambio` los cambios de **estado, técnico y prioridad** frente a la importación anterior.
 - **Eventos:** los cambios de estado generan eventos según IMP-06.
 - **Duplicados:** si se importa dos veces el mismo archivo (mismo hash), el sistema avisa y no duplica nada.

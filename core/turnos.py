@@ -27,6 +27,11 @@ class Franja:
             return self.inicio <= minuto < self.fin
         return minuto >= self.inicio or minuto < self.fin
 
+    @property
+    def texto(self) -> str:
+        """«HH:MM-HH:MM», como en config.ini."""
+        return f"{_hhmm(self.inicio)}-{_hhmm(self.fin)}"
+
 
 def _hhmm(minuto: int) -> str:
     return f"{minuto // 60:02d}:{minuto % 60:02d}"

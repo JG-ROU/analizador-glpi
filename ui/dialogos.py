@@ -1,4 +1,4 @@
-"""Diálogos de error en español y manejador global de excepciones (RNF-11)."""
+"""Diálogos de mensajes en español y manejador global de excepciones (RNF-11)."""
 
 import logging
 import sys
@@ -14,6 +14,19 @@ TITULO = "Analizador GLPI"
 
 def mostrar_error(mensaje: str, padre: QWidget | None = None) -> None:
     QMessageBox.critical(padre, TITULO, mensaje)
+
+
+def mostrar_info(mensaje: str, padre: QWidget | None = None) -> None:
+    QMessageBox.information(padre, TITULO, mensaje)
+
+
+def confirmar(mensaje: str, padre: QWidget | None = None) -> bool:
+    respuesta = QMessageBox.question(
+        padre, TITULO, mensaje,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    return respuesta == QMessageBox.StandardButton.Yes
 
 
 def instalar_manejador_excepciones() -> None:

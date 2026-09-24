@@ -1,0 +1,387 @@
+"""Motor de KPIs predefinidos de la Fase 1 (spec 05; RN-01 a RN-07; CA-06).
+
+Cada KPI se calcula para un período [inicio, fin) con filtros y a una fecha de
+corte: el fin del período o ahora, si el período no ha terminado. Las gestiones
+(KPI-04, KPI-05) son eventos de solución y de escalamiento (RN-07): se cuentan
+eventos, no tickets, en el período en que ocurren.
+
+La definición (umbrales, dirección, visibilidad) se lee de `kpi_definicion`; la
+fórmula de cada predefinido está en `calculo_especial`. Los KPIs creados por el
+usuario (KPI-00) llegan en la Fase 2.
+"""
+
+import sqlite3
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta
+
+from core import parametros, reloj
+from core.analisis import estadistica as est
+from core.analisis import semaforo, sla
+from core.analisis.filtros import Filtros, filtros_permitidos
+from core.analisis.periodos import Periodo
+from core.dominio import PRIORIDADES
+from core.errores import ErrorValidacion
+from core.importacion import eventos as ev
+from core.seguridad import Sesion
+
+NOTA_APROXIMADO = (
+    "≈ Aproximado: la fecha de solución es la última actualización del ticket en la "
+    "importación en que apareció resuelto."
+)
+NOTA_SIN_SLA = "Defina los objetivos de SLA por prioridad en Configuración."
+
+NOMBRE_PRIORIDAD = {p.nivel: p.nombre for p in PRIORIDADES}
+
+
+@dataclass
+class ResultadoKPI:
+    codigo: str
+    nombre: str
+    unidad: str
+    direccion: str
+    valor: float | None
+    numerador: float | None = None
+    denominador: float | None = None
+    cantidad: int = 0  # tickets o eventos sobre los que se calculó (RN-04)
+    muestra_pequena: bool = False
+    semaforo: str = semaforo.SIN_DATOS
+    meta: float | None = None
+    aproximado: bool = False
+    critico: bool = False
+    visible_dashboard: bool = True
+    notas: list[str] = field(default_factory=list)
+    detalle: list[dict] = field(default_factory=list)
+    valor_anterior: float | None = None
+    p90: float | None = None  # KPIs de tiempo
+
+    @property
+    def variacion_puntos(self) -> float | None:
+        if self.valor is None or self.valor_anterior is None:
+            return None
+        return round(self.valor - self.valor_anterior, est.DECIMALES)
+
+    @property
+    def variacion_porcentual(self) -> float | None:
+        if self.valor is None or not self.valor_anterior:
+            return None
+        return est.porcentaje(self.valor - self.valor_anterior, abs(self.valor_anterior))
+
+
+def _iso(fecha: datetime) -> str:
+    return fecha.isoformat(sep=" ")
+
+
+class CalculadoraKPI:
+    """Calcula KPIs con los parámetros y definiciones leídos una sola vez."""
+
+    def __init__(self, conexion: sqlite3.Connection, sesion: Sesion, ahora: datetime | None = None):
+        self.conexion = conexion
+        self.sesion = sesion
+        self.ahora = ahora or reloj.ahora()
+        self.muestra_minima = parametros.entero(conexion, "muestra_minima")
+        self.dias_sin_cerrar = parametros.entero(conexion, "dias_resuelto_sin_cerrar")
+        self.objetivos_sla = sla.objetivos(conexion)
+        self.horas_sin_actualizar = {
+            p.nivel: parametros.decimal_opcional(conexion, f"horas_sin_actualizar_{p.clave}")
+            for p in PRIORIDADES
+        }
+        self.umbrales_kpi06 = {
+            p.nivel: (
+                parametros.decimal_opcional(conexion, f"kpi06_verde_horas_{p.clave}"),
+                parametros.decimal_opcional(conexion, f"kpi06_amarillo_horas_{p.clave}"),
+            )
+            for p in PRIORIDADES
+        }
+        self.definiciones = {
+            fila["codigo"]: fila
+            for fila in conexion.execute(
+                "SELECT * FROM kpi_definicion WHERE activo = 1 ORDER BY orden"
+            )
+        }
+        self._formulas: dict[str, Callable[[Periodo, Filtros, datetime], ResultadoKPI]] = {
+            "KPI-01": self._kpi01_recibidos,
+            "KPI-02": self._kpi02_resueltos,
+            "KPI-03": self._kpi03_backlog,
+            "KPI-04": self._kpi04_gestionados,
+            "KPI-05": self._kpi05_escalamiento,
+            "KPI-06": self._kpi06_tiempo_resolucion,
+            "KPI-07": self._kpi07_sla,
+            "KPI-08": self._kpi08_resueltos_sin_cerrar,
+            "KPI-16": self._kpi16_sin_actualizar,
+            "KPI-17": self._kpi17_tiempo_escalado,
+        }
+
+    # --- API ---
+
+    def calcular(
+        self, codigo: str, periodo: Periodo, filtros: Filtros = Filtros(), comparar: bool = True
+    ) -> ResultadoKPI:
+        """Valor, semáforo y variación frente al período anterior de un KPI."""
+        definicion = self.definiciones.get(codigo)
+        if definicion is None:
+            raise ErrorValidacion(f"El KPI «{codigo}» no existe o está inactivo.")
+        formula = self._formulas.get(definicion["calculo_especial"])
+        if formula is None:
+            raise ErrorValidacion(
+                f"El KPI «{definicion['nombre']}» todavía no se puede calcular "
+                "(los KPIs creados por el usuario llegan en la Fase 2)."
+            )
+        filtros = filtros_permitidos(self.sesion, filtros)
+        resultado = self._completar(formula(periodo, filtros, periodo.corte(self.ahora)), definicion)
+        if comparar:
+            anterior = periodo.anterior()
+            previo = formula(anterior, filtros, anterior.corte(self.ahora))
+            resultado.valor_anterior = previo.valor
+        return resultado
+
+    def calcular_visibles(self, periodo: Periodo, filtros: Filtros = Filtros()) -> list[ResultadoKPI]:
+        """Los KPIs marcados como visibles en el dashboard, en su orden."""
+        return [
+            self.calcular(codigo, periodo, filtros)
+            for codigo, definicion in self.definiciones.items()
+            if definicion["visible_dashboard"]
+        ]
+
+    # --- Apoyo ---
+
+    def _completar(self, resultado: ResultadoKPI, definicion: sqlite3.Row) -> ResultadoKPI:
+        resultado = replace(
+            resultado,
+            nombre=definicion["nombre"],
+            unidad=definicion["unidad"],
+            direccion=definicion["direccion"],
+            meta=definicion["meta"],
+            aproximado=bool(definicion["aproximado"]),
+            critico=bool(definicion["critico"]),
+            visible_dashboard=bool(definicion["visible_dashboard"]),
+        )
+        resultado.muestra_pequena = est.muestra_pequena(resultado.cantidad, self.muestra_minima)
+        if resultado.semaforo == semaforo.SIN_DATOS:
+            resultado.semaforo = semaforo.evaluar(
+                resultado.valor, definicion["direccion"],
+                definicion["umbral_verde"], definicion["umbral_amarillo"],
+            )
+        if resultado.aproximado and NOTA_APROXIMADO not in resultado.notas:
+            resultado.notas.append(NOTA_APROXIMADO)
+        return resultado
+
+    def _base(self, codigo: str, valor, **otros) -> ResultadoKPI:
+        return ResultadoKPI(codigo=codigo, nombre="", unidad="", direccion="", valor=valor, **otros)
+
+    def _escalar(self, sql: str, parametros_sql: list) -> int:
+        return self.conexion.execute(sql, parametros_sql).fetchone()[0]
+
+    def _recibidos(self, periodo: Periodo, filtros: Filtros) -> int:
+        condicion, valores = filtros.sql("t")
+        return self._escalar(
+            "SELECT COUNT(*) FROM ticket t WHERE t.fecha_apertura >= ? AND t.fecha_apertura < ?"
+            + condicion,
+            [_iso(periodo.inicio), _iso(periodo.fin), *valores],
+        )
+
+    def contar_eventos(self, tipo: str, periodo: Periodo, filtros: Filtros, distintos: bool = False) -> int:
+        condicion, valores = filtros.sql("t")
+        contar = "COUNT(DISTINCT e.ticket_id)" if distintos else "COUNT(*)"
+        return self._escalar(
+            f"SELECT {contar} FROM ticket_evento e JOIN ticket t ON t.id_glpi = e.ticket_id "
+            "WHERE e.tipo = ? AND e.fecha_evento >= ? AND e.fecha_evento < ?" + condicion,
+            [tipo, _iso(periodo.inicio), _iso(periodo.fin), *valores],
+        )
+
+    @staticmethod
+    def _cte_ultimo_evento(tipos: tuple[str, ...]) -> str:
+        """CTE `ultimo` con un parámetro (la fecha de corte): el último evento de cada
+        ticket, entre `tipos`, anterior al corte. Una fila por ticket.
+
+        Se calcula en una sola pasada con ROW_NUMBER. Quien la usa debe consultarla con
+        IN / NOT IN o recorriéndola primero (CROSS JOIN): SQLite no le crea índice, y
+        unirla por la derecha con LEFT JOIN la recorre entera por cada ticket.
+        Los tipos son constantes del código.
+        """
+        marcas = ", ".join(f"'{t}'" for t in tipos)
+        return (
+            "WITH ultimo AS (SELECT ticket_id, tipo, fecha_evento FROM ("
+            "SELECT ticket_id, tipo, fecha_evento, ROW_NUMBER() OVER ("
+            "PARTITION BY ticket_id ORDER BY fecha_evento DESC, id DESC) AS n "
+            f"FROM ticket_evento WHERE tipo IN ({marcas}) AND fecha_evento < ?) WHERE n = 1) "
+        )
+
+    def abiertos_al_corte(self, filtros: Filtros, corte: datetime) -> list[sqlite3.Row]:
+        """Tickets abiertos a la fecha de corte, con los permisos de la sesión."""
+        return self._abiertos_al_corte(filtros_permitidos(self.sesion, filtros), corte)
+
+    def _abiertos_al_corte(self, filtros: Filtros, corte: datetime) -> list[sqlite3.Row]:
+        """Tickets abiertos a la fecha de corte: abiertos antes del corte y cuyo último
+        evento de solución o reapertura no es una solución."""
+        condicion, valores = filtros.sql("t")
+        return self.conexion.execute(
+            self._cte_ultimo_evento((ev.SOLUCION, ev.REAPERTURA))
+            + "SELECT t.id_glpi, t.prioridad_nivel, t.ultima_actualizacion, t.tecnico_principal_id "
+            "FROM ticket t "
+            "WHERE t.fecha_apertura < ? AND t.id_glpi NOT IN "
+            f"(SELECT ticket_id FROM ultimo WHERE tipo = '{ev.SOLUCION}')"
+            + condicion,
+            [_iso(corte), _iso(corte), *valores],
+        ).fetchall()
+
+    def _resueltos_en(self, periodo: Periodo, filtros: Filtros) -> list[sqlite3.Row]:
+        """Tickets cuya fecha de solución vigente cae en el período."""
+        condicion, valores = filtros.sql("t")
+        return self.conexion.execute(
+            "SELECT t.id_glpi, t.prioridad_nivel, t.horas_resolucion FROM ticket t "
+            "WHERE t.fecha_solucion >= ? AND t.fecha_solucion < ?" + condicion,
+            [_iso(periodo.inicio), _iso(periodo.fin), *valores],
+        ).fetchall()
+
+    # --- Fórmulas ---
+
+    def _kpi01_recibidos(self, periodo, filtros, corte) -> ResultadoKPI:
+        cantidad = self._recibidos(periodo, filtros)
+        return self._base("KPI-01", float(cantidad), cantidad=cantidad)
+
+    def _kpi02_resueltos(self, periodo, filtros, corte) -> ResultadoKPI:
+        cantidad = self.contar_eventos(ev.SOLUCION, periodo, filtros, distintos=True)
+        return self._base("KPI-02", float(cantidad), cantidad=cantidad)
+
+    def _kpi03_backlog(self, periodo, filtros, corte) -> ResultadoKPI:
+        abiertos = self._abiertos_al_corte(filtros, corte)
+        detalle = [
+            {"prioridad": NOMBRE_PRIORIDAD[nivel], "abiertos": sum(1 for a in abiertos if a["prioridad_nivel"] == nivel)}
+            for nivel in sorted(NOMBRE_PRIORIDAD, reverse=True)
+        ]
+        return self._base("KPI-03", float(len(abiertos)), cantidad=len(abiertos), detalle=detalle)
+
+    def _kpi04_gestionados(self, periodo, filtros, corte) -> ResultadoKPI:
+        soluciones = self.contar_eventos(ev.SOLUCION, periodo, filtros)
+        escalamientos = self.contar_eventos(ev.ESCALAMIENTO, periodo, filtros)
+        recibidos = self._recibidos(periodo, filtros)
+        gestiones = soluciones + escalamientos
+        return self._base(
+            "KPI-04", est.porcentaje(gestiones, recibidos), numerador=gestiones,
+            denominador=recibidos, cantidad=recibidos,
+            detalle=[{"soluciones": soluciones, "escalamientos": escalamientos, "recibidos": recibidos}],
+        )
+
+    def _kpi05_escalamiento(self, periodo, filtros, corte) -> ResultadoKPI:
+        soluciones = self.contar_eventos(ev.SOLUCION, periodo, filtros)
+        escalamientos = self.contar_eventos(ev.ESCALAMIENTO, periodo, filtros)
+        gestiones = soluciones + escalamientos
+        return self._base(
+            "KPI-05", est.porcentaje(escalamientos, gestiones), numerador=escalamientos,
+            denominador=gestiones, cantidad=gestiones,
+            detalle=[{"soluciones": soluciones, "escalamientos": escalamientos}],
+        )
+
+    def _kpi06_tiempo_resolucion(self, periodo, filtros, corte) -> ResultadoKPI:
+        resueltos = self._resueltos_en(periodo, filtros)
+        resumen = est.resumir_tiempos((r["horas_resolucion"] for r in resueltos), self.muestra_minima)
+        detalle, colores = [], []
+        for nivel in sorted(NOMBRE_PRIORIDAD, reverse=True):
+            horas = [r["horas_resolucion"] for r in resueltos if r["prioridad_nivel"] == nivel]
+            if not horas:
+                continue
+            parcial = est.resumir_tiempos(horas, self.muestra_minima)
+            verde, amarillo = self.umbrales_kpi06[nivel]
+            color = semaforo.evaluar(parcial.mediana, semaforo.MENOR_MEJOR, verde, amarillo)
+            colores.append(color)
+            detalle.append({
+                "prioridad": NOMBRE_PRIORIDAD[nivel], "tickets": parcial.cantidad,
+                "mediana": parcial.mediana, "p90": parcial.p90, "promedio": parcial.promedio,
+                "muestra_pequena": parcial.muestra_pequena, "semaforo": color,
+            })
+        # El semáforo global es el peor de las prioridades con umbrales definidos
+        color = semaforo.peor(colores)
+        if color == semaforo.SIN_DATOS and resumen.mediana is not None:
+            color = semaforo.INFORMATIVO
+        notas = [est.AVISO_SIN_ESPERA]
+        if resumen.p90 is not None:
+            notas.append(f"P90: {resumen.p90} h")
+        return self._base(
+            "KPI-06", resumen.mediana, cantidad=resumen.cantidad, detalle=detalle,
+            semaforo=color, notas=notas, p90=resumen.p90,
+        )
+
+    def _kpi07_sla(self, periodo, filtros, corte) -> ResultadoKPI:
+        resueltos = self._resueltos_en(periodo, filtros)
+        con_objetivo = [
+            r for r in resueltos
+            if self.objetivos_sla.get(r["prioridad_nivel"]) is not None and r["horas_resolucion"] is not None
+        ]
+        a_tiempo = sum(
+            sla.a_tiempo(r["horas_resolucion"], self.objetivos_sla[r["prioridad_nivel"]]) for r in con_objetivo
+        )
+        notas = [est.AVISO_SIN_ESPERA]
+        if all(v is None for v in self.objetivos_sla.values()):
+            notas.insert(0, NOTA_SIN_SLA)
+        return self._base(
+            "KPI-07", est.porcentaje(a_tiempo, len(con_objetivo)), numerador=a_tiempo,
+            denominador=len(con_objetivo), cantidad=len(con_objetivo), notas=notas,
+        )
+
+    def _kpi08_resueltos_sin_cerrar(self, periodo, filtros, corte) -> ResultadoKPI:
+        """De los tickets resueltos en el período, los que a la fecha de corte siguen en
+        Resuelto (sin cierre ni reapertura) desde hace más de `dias_resuelto_sin_cerrar`."""
+        condicion, valores = filtros.sql("t")
+        limite = corte - timedelta(days=self.dias_sin_cerrar)
+        # Si el último evento (solución, cierre o reapertura) es la solución, su fecha
+        # es la de la solución vigente
+        # Todo ticket resuelto en el período tiene al menos ese evento antes del corte,
+        # así que siempre aparece en `ultimo`
+        filas = self.conexion.execute(
+            self._cte_ultimo_evento((ev.SOLUCION, ev.CIERRE, ev.REAPERTURA))
+            + "SELECT t.id_glpi, u.tipo AS ultimo, u.fecha_evento AS fecha "
+            "FROM ultimo u CROSS JOIN ticket t ON t.id_glpi = u.ticket_id "
+            "WHERE u.ticket_id IN (SELECT ticket_id FROM ticket_evento "
+            f" WHERE tipo = '{ev.SOLUCION}' AND fecha_evento >= ? AND fecha_evento < ?)"
+            + condicion,
+            [_iso(corte), _iso(periodo.inicio), _iso(periodo.fin), *valores],
+        ).fetchall()
+        sin_cerrar = sum(
+            1 for f in filas
+            if f["ultimo"] == ev.SOLUCION and datetime.fromisoformat(f["fecha"]) < limite
+        )
+        return self._base(
+            "KPI-08", est.porcentaje(sin_cerrar, len(filas)), numerador=sin_cerrar,
+            denominador=len(filas), cantidad=len(filas),
+        )
+
+    def _kpi16_sin_actualizar(self, periodo, filtros, corte) -> ResultadoKPI:
+        abiertos = self._abiertos_al_corte(filtros, corte)
+        sin_actualizar = 0
+        for ticket in abiertos:
+            umbral = self.horas_sin_actualizar.get(ticket["prioridad_nivel"])
+            ultima = datetime.fromisoformat(ticket["ultima_actualizacion"])
+            if umbral is not None and ultima < corte and corte - ultima > timedelta(hours=umbral):
+                sin_actualizar += 1
+        return self._base(
+            "KPI-16", est.porcentaje(sin_actualizar, len(abiertos)), numerador=sin_actualizar,
+            denominador=len(abiertos), cantidad=len(abiertos),
+        )
+
+    def _kpi17_tiempo_escalado(self, periodo, filtros, corte) -> ResultadoKPI:
+        """Horas entre cada escalamiento y su salida, para las salidas del período."""
+        condicion, valores = filtros.sql("t")
+        filas = self.conexion.execute(
+            "SELECT e.ticket_id, e.tipo, e.fecha_evento FROM ticket_evento e "
+            "JOIN ticket t ON t.id_glpi = e.ticket_id WHERE e.tipo IN (?, ?) "
+            "AND e.fecha_evento < ?" + condicion + " ORDER BY e.ticket_id, e.fecha_evento, e.id",
+            [ev.ESCALAMIENTO, ev.SALIDA_ESCALADO, _iso(periodo.fin), *valores],
+        ).fetchall()
+        duraciones = []
+        abierto: dict[int, datetime] = {}
+        for fila in filas:
+            fecha = datetime.fromisoformat(fila["fecha_evento"])
+            if fila["tipo"] == ev.ESCALAMIENTO:
+                abierto[fila["ticket_id"]] = fecha
+            elif fila["ticket_id"] in abierto:
+                inicio = abierto.pop(fila["ticket_id"])
+                if periodo.contiene(fecha):
+                    duraciones.append((fecha - inicio).total_seconds() / 3600)
+        resumen = est.resumir_tiempos(duraciones, self.muestra_minima)
+        return self._base("KPI-17", resumen.mediana, cantidad=resumen.cantidad, p90=resumen.p90)
+
+
+def criticidad_global(resultados: list[ResultadoKPI]) -> str:
+    """Peor semáforo entre los KPIs marcados como críticos."""
+    return semaforo.peor(r.semaforo for r in resultados if r.critico)

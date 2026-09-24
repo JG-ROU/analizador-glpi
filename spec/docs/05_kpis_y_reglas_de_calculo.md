@@ -37,12 +37,12 @@ Todo KPI, predefinido o creado, se define en `kpi_definicion` con:
 |---|---|---|---|
 | KPI-01 | Tickets recibidos | Conteo de tickets con fecha_apertura en el período | Informativo |
 | KPI-02 | Tickets resueltos | Tickets distintos con un evento SOLUCION en el período | Informativo |
-| KPI-03 | Backlog al corte | Tickets abiertos a la fecha de corte. En la fecha de la última importación se usa el estado. En cortes anteriores: apertura ≤ corte y (sin fecha_solucion o fecha_solucion > corte), lo que es aproximado | Menor es mejor; umbrales a definir con la línea base |
+| KPI-03 | Backlog al corte | Tickets abiertos antes del corte cuyo último evento de solución o reapertura anterior al corte no es una solución (IMP-06). Sirve igual para el corte actual y para cortes pasados | Menor es mejor; umbrales a definir con la línea base |
 | KPI-04 | Total gestionados | (eventos SOLUCION + eventos ESCALAMIENTO del período) / tickets recibidos en el período × 100. **Puede superar 100 %** | Meta 100 %; ≥ 80 % verde; < 80 % activa acción preventiva |
 | KPI-05 | Tasa de escalamiento | Eventos ESCALAMIENTO / (eventos SOLUCION + eventos ESCALAMIENTO) del período × 100 | ≤ 20 % verde · 20–35 % amarillo · > 35 % rojo |
 | KPI-06 | Tiempo de resolución ≈ | Mediana de horas_resolucion (y P90) de los tickets resueltos en el período, por prioridad | Umbrales por prioridad en parámetros |
 | KPI-07 | Cumplimiento SLA ≈ | Resueltos a tiempo / resueltos con objetivo × 100. "A tiempo" = horas_resolucion ≤ objetivo de su prioridad (`sla_horas_<prioridad>`, uno por cada uno de los 6 niveles). No hay fecha de vencimiento en la exportación | ≥ 90 % verde · 80–90 % amarillo (propuesta) |
-| KPI-08 | Resueltos sin cerrar | Tickets en estado RESUELTO desde hace más de `dias_resuelto_sin_cerrar` a la fecha de corte / tickets resueltos en el período × 100. El cierre depende del visto bueno del autor: **en la vista por técnico es informativo, no una falla del técnico** | ≤ 5 % verde (propuesta) |
+| KPI-08 | Resueltos sin cerrar | De los tickets resueltos en el período, los que a la fecha de corte siguen en Resuelto (sin cierre ni reapertura) desde hace más de `dias_resuelto_sin_cerrar` / tickets resueltos en el período × 100. Así el valor nunca supera 100 %. El cierre depende del visto bueno del autor: **en la vista por técnico es informativo, no una falla del técnico** | ≤ 5 % verde (propuesta) |
 | ~~KPI-09~~ | ~~Completitud de datos~~ | **Retirado:** no hay columnas de categoría, causa ni tipo de solución | — |
 | ~~KPI-10~~ | ~~Uso de "Otros"~~ | **Retirado:** no hay columna de categoría | — |
 | KPI-11 | Reincidencia | **Pendiente de redefinir en la Fase 2:** dependía de la categoría y la estación | — |

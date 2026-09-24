@@ -1,0 +1,145 @@
+/* Estilo corporativo: tema claro, azul marino, Segoe UI (spec 06) */
+
+QWidget {
+    font-family: "Segoe UI", "Segoe UI Symbol";
+    font-size: 10pt;
+    color: #1B2733;
+}
+
+QMainWindow, QDialog, QWizard {
+    background: #F4F6F9;
+}
+
+/* Menú lateral */
+QListWidget#menuLateral {
+    background: #1F3A5F;
+    color: #FFFFFF;
+    border: none;
+    padding-top: 8px;
+    font-size: 10.5pt;
+}
+QListWidget#menuLateral::item {
+    padding: 10px 14px;
+    border-left: 4px solid transparent;
+}
+QListWidget#menuLateral::item:selected {
+    background: #2B4C77;
+    border-left: 4px solid #7FB3E6;
+    color: #FFFFFF;
+}
+QListWidget#menuLateral::item:hover {
+    background: #274568;
+}
+
+/* Barra superior */
+QFrame#barraSuperior {
+    background: #FFFFFF;
+    border-bottom: 1px solid #D5DCE4;
+}
+QLabel#tituloPantalla {
+    font-size: 15pt;
+    font-weight: 600;
+    color: #1F3A5F;
+}
+QLabel#importacionVencida {
+    color: #C62828;
+    font-weight: 600;
+}
+QLabel#nota {
+    color: #5A6B7B;
+    font-style: italic;
+}
+QLabel#aviso {
+    color: #8A5A00;
+    background: #FFF3C4;
+    border: 1px solid #F0D98A;
+    border-radius: 4px;
+    padding: 6px;
+}
+
+/* Tarjetas de KPI */
+QFrame#tarjetaKpi {
+    background: #FFFFFF;
+    border: 1px solid #D5DCE4;
+    border-radius: 6px;
+}
+QLabel#tarjetaNombre {
+    color: #5A6B7B;
+    font-size: 9pt;
+}
+QLabel#tarjetaValor {
+    font-size: 18pt;
+    font-weight: 600;
+    color: #1F3A5F;
+}
+
+/* Botones */
+QPushButton {
+    background: #1F3A5F;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+}
+QPushButton:hover {
+    background: #2B4C77;
+}
+QPushButton:disabled {
+    background: #B7C2CE;
+    color: #EEF1F4;
+}
+QPushButton#secundario {
+    background: #FFFFFF;
+    color: #1F3A5F;
+    border: 1px solid #1F3A5F;
+}
+QPushButton#secundario:disabled {
+    color: #B7C2CE;
+    border: 1px solid #D5DCE4;
+}
+
+/* Tablas */
+QTableView, QTableWidget {
+    background: #FFFFFF;
+    alternate-background-color: #F7F9FB;
+    gridline-color: #E3E8EE;
+    selection-background-color: #CFE0F3;
+    selection-color: #1B2733;
+}
+QHeaderView::section {
+    background: #1F3A5F;
+    color: #FFFFFF;
+    padding: 5px;
+    border: none;
+    border-right: 1px solid #2B4C77;
+    font-weight: 600;
+}
+
+QGroupBox {
+    border: 1px solid #D5DCE4;
+    border-radius: 6px;
+    margin-top: 14px;
+    background: #FFFFFF;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+    color: #1F3A5F;
+    font-weight: 600;
+}
+
+QTabWidget::pane {
+    border: 1px solid #D5DCE4;
+    background: #FFFFFF;
+}
+QTabBar::tab {
+    padding: 7px 14px;
+    background: #E6EBF1;
+    border: 1px solid #D5DCE4;
+}
+QTabBar::tab:selected {
+    background: #FFFFFF;
+    color: #1F3A5F;
+    font-weight: 600;
+}

@@ -45,6 +45,7 @@ def test_primer_arranque_crea_config_carpetas_y_bd_junto_al_exe(exe_simulado):
         for carpeta in ("data", "data/respaldos", "exportaciones", "logs"):
             assert (base / carpeta).is_dir(), carpeta
         assert (base / "data" / "analizador.db").is_file()
+        assert len(list((base / "data" / "respaldos").glob("analizador_diario_*.db"))) == 1
         assert contexto.conexion.execute("PRAGMA user_version").fetchone()[0] >= 1
         contenido = (base / "logs" / "app.log").read_text(encoding="utf-8")
         assert "Inicio de Analizador GLPI" in contenido
