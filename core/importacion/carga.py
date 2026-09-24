@@ -54,6 +54,7 @@ class ResumenImportacion:
     eventos: Counter = field(default_factory=Counter)
     respaldo: Path | None = None
     hallazgos: object | None = None  # ResumenDeteccion, si se ejecutaron los hallazgos después
+    snapshots: list[str] = field(default_factory=list)  # períodos cuyo snapshot se generó después
 
 
 def _iso(fecha: datetime | None) -> str | None:

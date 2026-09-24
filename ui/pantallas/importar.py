@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from core.analisis import hallazgos
+from core.analisis import hallazgos, snapshot
 from core.analisis.kpis import NOMBRE_PRIORIDAD
 from core.analisis.series import NOMBRE_ESTADO
 from core.errores import ErrorAplicacion
@@ -351,8 +351,9 @@ class PantallaImportar(QWidget):
                 validacion=resultado, franjas=config.turnos, carpeta_respaldos=config.rutas.respaldos,
                 retencion_respaldos=config.general.retencion_respaldos, progreso=avance,
             )
-            # Después de cada importación se ejecutan los hallazgos (spec 08)
+            # Después de cada importación: hallazgos (spec 08) y snapshots de períodos cerrados (spec 09)
             resumen.hallazgos = hallazgos.detectar(conexion)
+            resumen.snapshots = snapshot.generar_pendientes(conexion)
             return resumen
 
         self._ocupado(True, "Importando…")
@@ -373,7 +374,8 @@ class PantallaImportar(QWidget):
             f"Cambios registrados: {resumen.cambios}\nEventos detectados: {eventos}\n\n"
             f"Respaldo previo: {resumen.respaldo.name if resumen.respaldo else '—'}\n\n"
             f"Hallazgos: {resumen.hallazgos.nuevos} nuevos ({resumen.hallazgos.altas_nuevas} de severidad ALTA), "
-            f"{resumen.hallazgos.cerrados} cerrados.",
+            f"{resumen.hallazgos.cerrados} cerrados.\n"
+            f"Snapshots generados: {', '.join(resumen.snapshots) or 'ninguno pendiente'}.",
             self,
         )
 

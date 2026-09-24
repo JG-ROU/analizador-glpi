@@ -116,6 +116,24 @@ def brecha_vs_meta(brechas: list[Brecha]) -> Figure:
     return figura
 
 
+def tendencia(puntos: list, titulo: str, unidad: str = "") -> Figure:
+    """Línea con los valores guardados en snapshot (tendencias de 6 y 12 meses)."""
+    figura, ejes = _figura(titulo)
+    con_valor = [p for p in puntos if p.valor is not None]
+    if not con_valor:
+        _sin_datos(ejes)
+        ejes.text(0.5, 0.35, "Genere snapshots de meses cerrados para ver la tendencia", ha="center",
+                  transform=ejes.transAxes, color=GRIS, fontsize=8)
+        return figura
+    ejes.plot([p.periodo for p in con_valor], [p.valor for p in con_valor], marker="o", color=AZUL_MARINO)
+    for p in con_valor:
+        ejes.annotate(f"{p.valor:g}", (p.periodo, p.valor), textcoords="offset points", xytext=(0, 6),
+                      ha="center", fontsize=7)
+    ejes.set_ylabel(unidad, fontsize=8)
+    ejes.tick_params(axis="x", rotation=45 if len(con_valor) > 6 else 0)
+    return figura
+
+
 def a_png(figura: Figure, dpi: int = 110) -> bytes:
     """PNG de la figura, para Excel y PDF."""
     FigureCanvasAgg(figura)

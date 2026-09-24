@@ -12,11 +12,14 @@ from PySide6.QtWidgets import (
 )
 
 from core import configuracion as cfg
-from core.analisis import condiciones, semaforo
+from core.analisis import condiciones, semaforo, snapshot
 from core.analisis.kpis import CAMPOS_TIEMPO, TIPOS_CALCULO, TIPOS_TIEMPO, CalculadoraKPI
 from core.errores import ErrorAplicacion
+from core.reportes import graficos
 from core.reportes.catalogo import formatear_valor
+from ui.componentes.graficos import Grafico
 from ui.dialogos import confirmar, mostrar_error, mostrar_info
+from ui.hilos import con_conexion, ejecutar
 
 DIRECCIONES = {"MAYOR_MEJOR": "Mayor es mejor", "MENOR_MEJOR": "Menor es mejor", "INFORMATIVO": "Informativo"}
 
@@ -164,10 +167,19 @@ class PantallaKPIs(QWidget):
         self.tabla.itemSelectionChanged.connect(self._elegido)
         nuevo = QPushButton("Nuevo KPI")
         nuevo.clicked.connect(self.nuevo)
+        generar = QPushButton("Generar snapshot del período")
+        generar.setObjectName("secundario")
+        generar.setToolTip("Guarda el valor de todos los KPIs del mes o semana elegidos, para las tendencias.")
+        generar.clicked.connect(self.generar_snapshot)
+        botones_izq = QHBoxLayout()
+        botones_izq.addWidget(nuevo)
+        botones_izq.addWidget(generar)
+        self.grafico_tendencia = Grafico()
         izquierda = QWidget()
         diseno_izq = QVBoxLayout(izquierda)
         diseno_izq.addWidget(self.tabla)
-        diseno_izq.addWidget(nuevo)
+        diseno_izq.addLayout(botones_izq)
+        diseno_izq.addWidget(self.grafico_tendencia)
 
         self.nombre = QLineEdit()
         self.descripcion = QLineEdit()
@@ -284,6 +296,10 @@ class PantallaKPIs(QWidget):
         self.eliminar_boton.setEnabled(self.codigo is not None and not self.predefinido)
         self.previa.clear()
         self._ajustar_tipo()
+        if self.codigo:
+            puntos = snapshot.tendencia(self.estado.conexion, self.codigo, cantidad=12)
+            self.grafico_tendencia.mostrar(graficos.tendencia(puntos, f"Tendencia 12 meses · {self.codigo}",
+                                                              fila.get("unidad") or ""))
 
     def _ajustar_tipo(self) -> None:
         tipo = self.tipo.currentData()
@@ -338,6 +354,17 @@ class PantallaKPIs(QWidget):
         self.estado.datos_cambiados.emit()
         self.actualizar()
         mostrar_info(f"KPI {self.codigo} guardado. El cambio quedó en el historial.", self)
+
+    def generar_snapshot(self) -> None:
+        periodo, estado = self.estado.periodo, self.estado
+        if periodo.granularidad not in snapshot.GRANULARIDAD:
+            mostrar_error("El snapshot se genera por mes o por semana: elija uno de esos períodos arriba.", self)
+            return
+        ejecutar(self, con_conexion(estado, lambda conexion, avance: snapshot.generar(
+            conexion, periodo, estado.sesion.usuario_id)),
+            lambda cantidad: (mostrar_info(f"Snapshot de {periodo.etiqueta}: {cantidad} valores guardados.", self),
+                              self._elegido()),
+            lambda mensaje: mostrar_error(mensaje, self))
 
     def eliminar(self) -> None:
         if not self.codigo or not confirmar(f"¿Eliminar el KPI {self.codigo}?", self):
