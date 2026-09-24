@@ -19,6 +19,8 @@ from ui.estado import EstadoApp
 from ui.pantallas.clasificacion import PantallaClasificacion
 from ui.pantallas.configuracion import PantallaConfiguracion
 from ui.pantallas.dashboard import PantallaDashboard
+from ui.pantallas.estaciones import PantallaEstaciones
+from ui.pantallas.tipificaciones import PantallaTipificaciones
 from ui.pantallas.historial import PantallaHistorial
 from ui.pantallas.importar import PantallaImportar
 from ui.pantallas.kpis import PantallaKPIs
@@ -41,9 +43,12 @@ class VentanaPrincipal(QMainWindow):
         clases = [PantallaDashboard]
         if sesion.es_coordinador:
             clases += [PantallaImportar, PantallaClasificacion, PantallaNovedades, PantallaHallazgos,
-                       PantallaResponsables, PantallaKPIs, PantallaConfiguracion, PantallaHistorial]
+                       PantallaEstaciones, PantallaTipificaciones, PantallaResponsables, PantallaKPIs,
+                       PantallaConfiguracion, PantallaHistorial]
         elif sesion.tecnico_id is not None:
-            clases += [PantallaNovedades, PantallaResponsables]
+            clases += [PantallaNovedades, PantallaEstaciones, PantallaTipificaciones, PantallaResponsables]
+        else:
+            clases += [PantallaEstaciones, PantallaTipificaciones]
         self.pantallas = [clase(estado) for clase in clases]
         self._pendientes = set(range(len(self.pantallas)))
 

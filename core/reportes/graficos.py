@@ -134,6 +134,39 @@ def tendencia(puntos: list, titulo: str, unidad: str = "") -> Figure:
     return figura
 
 
+def mapa_calor(tabla, titulo: str = "Tickets por estación y familia") -> Figure:
+    """Filas y columnas de un DataFrame de conteos; cada celda muestra su número."""
+    figura, ejes = _figura(titulo)
+    if tabla is None or tabla.empty:
+        _sin_datos(ejes)
+        return figura
+    imagen = ejes.imshow(tabla.values, cmap="Blues", aspect="auto")
+    ejes.set_xticks(range(len(tabla.columns)), list(tabla.columns), fontsize=7, rotation=45)
+    ejes.set_yticks(range(len(tabla.index)), list(tabla.index), fontsize=7)
+    maximo = tabla.values.max() or 1
+    for i in range(len(tabla.index)):
+        for j in range(len(tabla.columns)):
+            valor = int(tabla.values[i, j])
+            if valor:
+                ejes.text(j, i, valor, ha="center", va="center", fontsize=7,
+                          color="white" if valor > maximo / 2 else AZUL_MARINO)
+    figura.colorbar(imagen, ax=ejes, shrink=0.8)
+    return figura
+
+
+def lineas(tabla, titulo: str) -> Figure:
+    """Una línea por columna de un DataFrame (filas = períodos)."""
+    figura, ejes = _figura(titulo)
+    if tabla is None or tabla.empty:
+        _sin_datos(ejes)
+        return figura
+    for columna in tabla.columns:
+        ejes.plot(list(tabla.index), list(tabla[columna]), marker="o", label=str(columna))
+    ejes.legend(fontsize=7, frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
+    ejes.set_ylim(bottom=0)
+    return figura
+
+
 def a_png(figura: Figure, dpi: int = 110) -> bytes:
     """PNG de la figura, para Excel y PDF."""
     FigureCanvasAgg(figura)

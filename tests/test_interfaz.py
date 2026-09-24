@@ -121,8 +121,8 @@ def test_menu_del_coordinador_y_todas_las_pantallas(qtbot, con_datos, coordinado
     ventana = VentanaPrincipal(EstadoApp(con_datos, coordinador))
     qtbot.addWidget(ventana)
     titulos = [ventana.menu.item(i).text() for i in range(ventana.menu.count())]
-    assert titulos == ["Dashboard", "Importar", "Clasificación", "Novedades", "Hallazgos", "Responsables",
-                       "KPIs", "Configuración", "Historial"]
+    assert titulos == ["Dashboard", "Importar", "Clasificación", "Novedades", "Hallazgos", "Estaciones",
+                       "Tipificaciones", "Responsables", "KPIs", "Configuración", "Historial"]
     for indice in range(ventana.menu.count()):
         ventana.menu.setCurrentRow(indice)
     ventana.menu.setCurrentRow(0)
@@ -140,21 +140,24 @@ def test_consulta_ve_solo_sus_pantallas_y_metricas(qtbot, con_datos, coordinador
     ventana = VentanaPrincipal(EstadoApp(con_datos, sesion))
     qtbot.addWidget(ventana)
     assert [ventana.menu.item(i).text() for i in range(ventana.menu.count())] == [
-        "Dashboard", "Novedades", "Responsables",
+        "Dashboard", "Novedades", "Estaciones", "Tipificaciones", "Responsables",
     ]
-    ventana.menu.setCurrentRow(2)
-    tabla = ventana.pantallas[2].tabla
+    ventana.menu.setCurrentRow(4)
+    tabla = ventana.pantallas[4].tabla
     assert tabla.modelo.rowCount() == 1 and tabla.modelo.fila(0)["Técnico"] == "Tecnico 02"
     ventana.menu.setCurrentRow(1)
     ids = set(ventana.pantallas[1].tabla.modelo.datos["ID"])
     assert ids and ids <= {11, 12}
 
 
-def test_jefatura_solo_ve_el_dashboard(qtbot, con_datos, coordinador):
+def test_jefatura_solo_ve_indicadores_agregados(qtbot, con_datos, coordinador):
     sesion = sesion_consulta(con_datos.conexion, coordinador, None)
     ventana = VentanaPrincipal(EstadoApp(con_datos, sesion))
     qtbot.addWidget(ventana)
-    assert ventana.menu.count() == 1
+    assert [ventana.menu.item(i).text() for i in range(ventana.menu.count())] == [
+        "Dashboard", "Estaciones", "Tipificaciones"]
+    for indice in (1, 2):
+        ventana.menu.setCurrentRow(indice)
 
 
 # --- PAN-02 Importar (CA-02, CA-03) ---
