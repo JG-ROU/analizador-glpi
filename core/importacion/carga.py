@@ -55,6 +55,7 @@ class ResumenImportacion:
     respaldo: Path | None = None
     hallazgos: object | None = None  # ResumenDeteccion, si se ejecutaron los hallazgos después
     snapshots: list[str] = field(default_factory=list)  # períodos cuyo snapshot se generó después
+    notificaciones: list = field(default_factory=list)  # NOT-02 y NOT-05 después de importar
 
 
 def _iso(fecha: datetime | None) -> str | None:

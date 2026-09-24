@@ -141,6 +141,8 @@ def _parametros_fase2() -> list[ParametroInicial]:
                          "HAL-08: veces la mediana del equipo en abiertos para sobrecarga.", minimo=1),
         ParametroInicial("reincidencia_dias", "7", "ENTERO", "Hallazgos",
                          "KPI-11: días hacia atrás en que se busca el mismo caso.", minimo=1),
+        ParametroInicial("correo_jefatura", None, "TEXTO", "Correo",
+                         "Destinatarios de los borradores de correo (separados por coma). Puede quedar vacío."),
         ParametroInicial("sla_riesgo_porcentaje", "80", "DECIMAL", "SLA",
                          "Porcentaje del objetivo consumido a partir del cual un ticket abierto está EN RIESGO.",
                          minimo=1, maximo=100),

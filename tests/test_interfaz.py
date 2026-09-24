@@ -359,6 +359,30 @@ def test_pantalla_de_reportes_genera_pdf(qtbot, con_datos, coordinador):
     assert pantalla.formulario.isRowVisible(pantalla.horas)
 
 
+def test_barra_de_avisos_al_iniciar(qtbot, con_datos, coordinador):
+    ventana = VentanaPrincipal(EstadoApp(con_datos, coordinador))
+    qtbot.addWidget(ventana)
+    ventana.show()
+    assert ventana.avisos.isVisible()
+    assert "NOT-03" in ventana.texto_avisos.text()  # agosto sin paquete mensual
+    ventana.ir_a("Reportes")
+    assert ventana.pantallas[ventana.pila.currentIndex()].titulo == "Reportes"
+
+
+def test_paquete_mensual_desde_reportes(qtbot, con_datos, coordinador, monkeypatch):
+    from ui.pantallas import reportes as pantalla_reportes
+
+    abiertos = []
+    monkeypatch.setattr(pantalla_reportes.QDesktopServices, "openUrl", staticmethod(lambda url: abiertos.append(url)))
+    monkeypatch.setattr(pantalla_reportes.DialogoPaquete, "exec", lambda self: pantalla_reportes.QDialog.DialogCode.Accepted)
+    estado = EstadoApp(con_datos, coordinador)
+    pantalla = pantalla_reportes.PantallaReportes(estado)
+    qtbot.addWidget(pantalla)
+    pantalla.generar_paquete()
+    qtbot.waitUntil(lambda: "Paquete generado" in pantalla.resultado.text(), timeout=30000)
+    assert abiertos and abiertos[0].toLocalFile().endswith("_correo.eml")
+
+
 def test_historial_muestra_los_cambios(qtbot, con_datos, coordinador):
     from ui.pantallas.historial import PantallaHistorial
     pantalla = PantallaHistorial(EstadoApp(con_datos, coordinador))

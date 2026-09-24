@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from core import notificaciones
 from core.analisis import hallazgos, snapshot
 from core.analisis.kpis import NOMBRE_PRIORIDAD
 from core.analisis.series import NOMBRE_ESTADO
@@ -354,6 +355,7 @@ class PantallaImportar(QWidget):
             # Después de cada importación: hallazgos (spec 08) y snapshots de períodos cerrados (spec 09)
             resumen.hallazgos = hallazgos.detectar(conexion)
             resumen.snapshots = snapshot.generar_pendientes(conexion)
+            resumen.notificaciones = notificaciones.pendientes(conexion, sesion, notificaciones.DESPUES_DE_IMPORTAR)
             return resumen
 
         self._ocupado(True, "Importando…")
@@ -375,7 +377,8 @@ class PantallaImportar(QWidget):
             f"Respaldo previo: {resumen.respaldo.name if resumen.respaldo else '—'}\n\n"
             f"Hallazgos: {resumen.hallazgos.nuevos} nuevos ({resumen.hallazgos.altas_nuevas} de severidad ALTA), "
             f"{resumen.hallazgos.cerrados} cerrados.\n"
-            f"Snapshots generados: {', '.join(resumen.snapshots) or 'ninguno pendiente'}.",
+            f"Snapshots generados: {', '.join(resumen.snapshots) or 'ninguno pendiente'}."
+            + "".join(f"\n\n⚠ {n.codigo}: {n.mensaje}" for n in resumen.notificaciones),
             self,
         )
 

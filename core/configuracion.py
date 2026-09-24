@@ -34,6 +34,8 @@ def listar_parametros(conexion: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def _validar_valor(fila: sqlite3.Row, texto: str) -> str | None:
+    if fila["tipo"] == "TEXTO":
+        return " ".join(texto.split()) or None
     texto = texto.strip().replace(",", ".")
     if not texto:
         if fila["grupo"] in GRUPOS_OPCIONALES:

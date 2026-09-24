@@ -57,6 +57,15 @@ QLabel#aviso {
     padding: 6px;
 }
 
+QFrame#barraAvisos {
+    background: #FFF8E1;
+    border-bottom: 1px solid #F0D98A;
+}
+QFrame#barraAvisos QLabel#aviso {
+    border: none;
+    background: transparent;
+}
+
 /* Tarjetas de KPI */
 QFrame#tarjetaKpi {
     background: #FFFFFF;

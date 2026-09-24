@@ -6,12 +6,15 @@ from pathlib import Path
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QPushButton, QRadioButton, QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QPushButton, QRadioButton, QVBoxLayout, QWidget,
 )
 from PySide6.QtCore import Qt
 
-from core.reportes import catalogo
+from core import reloj
+from core.analisis import periodos
+from core.errores import ErrorAplicacion
+from core.reportes import catalogo, paquete
 from ui.dialogos import mostrar_error
 from ui.hilos import con_conexion, ejecutar
 
@@ -76,9 +79,23 @@ class PantallaReportes(QWidget):
         diseno_caja.addLayout(botones)
         diseno_caja.addWidget(self.resultado)
         diseno_caja.addStretch()
+        mensual = QGroupBox("Paquete mensual y correos (coordinador)")
+        diseno_mensual = QHBoxLayout(mensual)
+        paquete_boton = QPushButton("Generar paquete mensual…")
+        paquete_boton.clicked.connect(self.generar_paquete)
+        correo_boton = QPushButton("Borrador de correo: hallazgos ALTA")
+        correo_boton.setObjectName("secundario")
+        correo_boton.clicked.connect(self.borrador_hallazgos)
+        diseno_mensual.addWidget(paquete_boton)
+        diseno_mensual.addWidget(correo_boton)
+        diseno_mensual.addStretch()
+        mensual.setVisible(estado.sesion.es_coordinador)
+        derecha = QVBoxLayout()
+        derecha.addWidget(caja, 1)
+        derecha.addWidget(mensual)
         diseno = QHBoxLayout(self)
         diseno.addWidget(self.lista, 1)
-        diseno.addWidget(caja, 2)
+        diseno.addLayout(derecha, 2)
         self.lista.setCurrentRow(0)
 
     def actualizar(self) -> None:
@@ -139,8 +156,66 @@ class PantallaReportes(QWidget):
         self.resultado.clear()
         mostrar_error(mensaje, self)
 
+    # --- Paquete mensual (REP-10) y borradores .eml ---
+
+    def generar_paquete(self) -> None:
+        mes = self.estado.periodo if self.estado.periodo.granularidad == periodos.MES \
+            else periodos.mes_de(reloj.ahora()).anterior()
+        dialogo = DialogoPaquete(mes, self)
+        if dialogo.exec() != QDialog.DialogCode.Accepted:
+            return
+        estado, resumen, plan = self.estado, dialogo.resumen.toPlainText(), dialogo.plan.toPlainText()
+        carpeta = estado.config.rutas.exportaciones
+        self.resultado.setText(f"Generando el paquete de {mes.etiqueta}…")
+        ejecutar(self, con_conexion(estado, lambda conexion, avance: paquete.generar(
+            conexion, estado.sesion, mes, carpeta, resumen, plan)), self._paquete_generado, self._fallo)
+
+    def _paquete_generado(self, resultado: paquete.Paquete) -> None:
+        self.ultimo = resultado.pdf
+        self.abrir.setEnabled(True)
+        self.resultado.setText(f"Paquete generado:\n{resultado.pdf}\n{resultado.excel}\n"
+                               f"Borrador de correo con el PDF adjunto: {resultado.correo.name}")
+        self.estado.datos_cambiados.emit()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(resultado.correo)))
+
+    def borrador_hallazgos(self) -> None:
+        try:
+            ruta = paquete.borrador_hallazgos_altos(self.estado.conexion, self.estado.sesion,
+                                                    self.estado.config.rutas.exportaciones)
+        except ErrorAplicacion as error:
+            mostrar_error(error.mensaje, self)
+            return
+        self.resultado.setText(f"Borrador de correo guardado en:\n{ruta}")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(ruta)))
+
     def _abrir_carpeta(self) -> None:
         carpeta = self.estado.config.rutas.exportaciones
         carpeta.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(carpeta)))
 
+
+class DialogoPaquete(QDialog):
+    """Textos editables del paquete mensual antes de generarlo."""
+
+    def __init__(self, mes: periodos.Periodo, padre=None):
+        super().__init__(padre)
+        self.setWindowTitle(f"Paquete mensual – {mes.etiqueta}")
+        self.resize(640, 480)
+        self.resumen = QPlainTextEdit()
+        self.resumen.setPlaceholderText("Resumen ejecutivo del mes: principales resultados, novedades y riesgos.")
+        self.plan = QPlainTextEdit()
+        self.plan.setPlaceholderText("Plan de mejora: acciones, responsables y fechas.")
+        nota = QLabel("Incluye REP-01, REP-09, tendencias de 6 meses, los 5 casos más repetidos, hallazgos y "
+                      "SEGMOV (si ya se generó REP-08 para el mes). Se crea además un borrador de correo con el "
+                      "PDF adjunto, dirigido al parámetro «correo_jefatura».")
+        nota.setObjectName("nota")
+        nota.setWordWrap(True)
+        botones = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        botones.button(QDialogButtonBox.StandardButton.Ok).setText("Generar")
+        botones.accepted.connect(self.accept)
+        botones.rejected.connect(self.reject)
+        diseno = QFormLayout(self)
+        diseno.addRow(nota)
+        diseno.addRow("Resumen ejecutivo:", self.resumen)
+        diseno.addRow("Plan de mejora:", self.plan)
+        diseno.addRow(botones)

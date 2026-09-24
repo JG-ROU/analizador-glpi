@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 import logging
 
 from core import parametros, reloj
+from core import notificaciones
 from core.analisis import hallazgos
 from core.importacion import carga
 from ui.hilos import con_conexion, ejecutar
@@ -70,6 +71,7 @@ class VentanaPrincipal(QMainWindow):
         derecha = QVBoxLayout()
         derecha.setContentsMargins(0, 0, 0, 0)
         derecha.addWidget(self._barra_superior())
+        derecha.addWidget(self._barra_avisos())
         contenedor = QWidget()
         diseno_pila = QVBoxLayout(contenedor)
         diseno_pila.addWidget(self.pila)
@@ -111,6 +113,40 @@ class VentanaPrincipal(QMainWindow):
         for widget in (self.selector, QLabel("Turno:"), self.turno, self.importacion, campana, usuario, acerca):
             diseno.addWidget(widget)
         return barra
+
+    def _barra_avisos(self) -> QFrame:
+        """Notificaciones al iniciar (NOT-01, NOT-02, NOT-03), con acceso a la pantalla sugerida."""
+        self.avisos = QFrame(objectName="barraAvisos")
+        diseno = QHBoxLayout(self.avisos)
+        diseno.setContentsMargins(12, 6, 12, 6)
+        self.texto_avisos = QLabel(objectName="aviso")
+        self.texto_avisos.setWordWrap(True)
+        self.boton_aviso = QPushButton()
+        self.boton_aviso.setObjectName("secundario")
+        self.boton_aviso.clicked.connect(lambda: self.ir_a(self._destino_aviso))
+        cerrar = QToolButton(text="✕")
+        cerrar.setToolTip("Ocultar avisos")
+        cerrar.clicked.connect(self.avisos.hide)
+        diseno.addWidget(self.texto_avisos, 1)
+        diseno.addWidget(self.boton_aviso)
+        diseno.addWidget(cerrar)
+        self.mostrar_notificaciones(notificaciones.pendientes(
+            self.estado.conexion, self.estado.sesion, notificaciones.AL_INICIAR))
+        return self.avisos
+
+    def mostrar_notificaciones(self, lista: list) -> None:
+        self.avisos.setVisible(bool(lista))
+        self.texto_avisos.setText("\n".join(f"{n.codigo} · {n.mensaje}" for n in lista))
+        self._destino_aviso = next((n.accion for n in lista if n.accion), None)
+        self.boton_aviso.setVisible(self._destino_aviso is not None)
+        if self._destino_aviso:
+            self.boton_aviso.setText(f"Ir a {self._destino_aviso}")
+
+    def ir_a(self, titulo: str) -> None:
+        for indice, pantalla in enumerate(self.pantallas):
+            if pantalla.titulo == titulo:
+                self.menu.setCurrentRow(indice)
+                return
 
     def _cargar_turnos(self) -> None:
         self.turno.clear()
