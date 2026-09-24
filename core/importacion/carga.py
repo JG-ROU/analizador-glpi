@@ -53,6 +53,7 @@ class ResumenImportacion:
     cambios: int = 0
     eventos: Counter = field(default_factory=Counter)
     respaldo: Path | None = None
+    hallazgos: object | None = None  # ResumenDeteccion, si se ejecutaron los hallazgos después
 
 
 def _iso(fecha: datetime | None) -> str | None:

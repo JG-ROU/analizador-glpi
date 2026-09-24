@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QGridLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
-from core.analisis import semaforo, series
+from core.analisis import hallazgos, semaforo, series
 from core.analisis.kpis import CalculadoraKPI, criticidad_global
 from core.errores import ErrorAplicacion
 from core.reportes import catalogo, graficos
@@ -24,6 +24,7 @@ from ui.hilos import con_conexion, ejecutar
 log = logging.getLogger(__name__)
 
 TARJETAS_POR_FILA = 5
+MAXIMO_HALLAZGOS = 6
 GRAFICOS = ("recibidos", "backlog", "prioridad", "estado", "carga", "brecha")
 
 
@@ -46,7 +47,11 @@ def calcular_tablero(conexion, sesion, periodo, filtros) -> dict:
         "brecha": graficos.brecha_vs_meta(series.brechas(resultados, calc.definiciones)),
     }
     descripciones = {codigo: fila["descripcion"] for codigo, fila in calc.definiciones.items()}
+    nuevos = hallazgos.listar(conexion, sesion, estados=(hallazgos.NUEVO,))
     return {
+        "hallazgos": nuevos.head(MAXIMO_HALLAZGOS),
+        "hallazgos_conteo": {sev: int((nuevos["Severidad"] == sev).sum()) for sev in (hallazgos.ALTA, hallazgos.MEDIA,
+                                                                                         hallazgos.BAJA)},
         "resultados": resultados,
         "criticidad": criticidad_global(resultados),
         "figuras": figuras,
@@ -84,17 +89,21 @@ class PantallaDashboard(QWidget):
             caja = QGroupBox()
             QVBoxLayout(caja).addWidget(self.graficos[nombre])
             cuadricula.addWidget(caja, posicion // 3, posicion % 3)
-        hallazgos = QGroupBox("Hallazgos nuevos")
-        nota = QLabel("Los hallazgos automáticos (HAL-01 a HAL-12) se incorporan en la Fase 2.")
-        nota.setObjectName("nota")
-        QVBoxLayout(hallazgos).addWidget(nota)
+        caja_hallazgos = QGroupBox("Hallazgos nuevos")
+        self.hallazgos_conteo = QLabel()
+        self.hallazgos_conteo.setStyleSheet("font-weight: 600;")
+        self.hallazgos_lista = QLabel()
+        self.hallazgos_lista.setWordWrap(True)
+        diseno_hallazgos = QVBoxLayout(caja_hallazgos)
+        diseno_hallazgos.addWidget(self.hallazgos_conteo)
+        diseno_hallazgos.addWidget(self.hallazgos_lista)
 
         contenido = QWidget()
         diseno = QVBoxLayout(contenido)
         diseno.addLayout(cabecera)
         diseno.addLayout(self.tarjetas)
+        diseno.addWidget(caja_hallazgos)
         diseno.addLayout(cuadricula)
-        diseno.addWidget(hallazgos)
         diseno.addStretch()
         desplazable = QScrollArea()
         desplazable.setWidgetResizable(True)
@@ -128,6 +137,15 @@ class PantallaDashboard(QWidget):
         )
         for nombre, figura in datos["figuras"].items():
             self.graficos[nombre].mostrar(figura)
+        conteo = datos["hallazgos_conteo"]
+        self.hallazgos_conteo.setText(
+            f"✖ Alta: {conteo['ALTA']}    ▲ Media: {conteo['MEDIA']}    ● Baja: {conteo['BAJA']}"
+        )
+        lista = datos["hallazgos"]
+        self.hallazgos_lista.setText(
+            "\n".join(f"[{f['Severidad']}] {f['Regla']}: {f['Descripción']}" for _, f in lista.iterrows())
+            or "Sin hallazgos nuevos."
+        )
         total = datos["segundos"] + (time.perf_counter() - inicio)
         self.tiempo.setText(f"{self.estado.periodo.etiqueta} · calculado en {total:.2f} s")
         log.info("Dashboard de %s calculado en %.2f s", self.estado.periodo.codigo, total)

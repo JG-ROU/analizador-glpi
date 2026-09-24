@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from core.analisis import hallazgos
 from core.analisis.kpis import NOMBRE_PRIORIDAD
 from core.analisis.series import NOMBRE_ESTADO
 from core.errores import ErrorAplicacion
@@ -345,11 +346,14 @@ class PantallaImportar(QWidget):
 
         def trabajo(conexion, avance):
             guardado = mapeo.guardar_perfil(conexion, sesion, perfil, fuente.formato.encabezados)
-            return carga.importar(
+            resumen = carga.importar(
                 conexion, sesion, archivo=fuente.ruta.name, hash_archivo=fuente.hash, perfil=guardado,
                 validacion=resultado, franjas=config.turnos, carpeta_respaldos=config.rutas.respaldos,
                 retencion_respaldos=config.general.retencion_respaldos, progreso=avance,
             )
+            # Después de cada importación se ejecutan los hallazgos (spec 08)
+            resumen.hallazgos = hallazgos.detectar(conexion)
+            return resumen
 
         self._ocupado(True, "Importando…")
         ejecutar(self, con_conexion(estado, trabajo), self._importado, self._fallo, self._avance)
@@ -367,7 +371,9 @@ class PantallaImportar(QWidget):
             f"Sin cambios: {resumen.sin_cambios}\nIgnorados por ser más antiguos: {resumen.omitidos_por_antiguos}\n"
             f"Filas con error (no cargadas): {resumen.filas_error}\n"
             f"Cambios registrados: {resumen.cambios}\nEventos detectados: {eventos}\n\n"
-            f"Respaldo previo: {resumen.respaldo.name if resumen.respaldo else '—'}",
+            f"Respaldo previo: {resumen.respaldo.name if resumen.respaldo else '—'}\n\n"
+            f"Hallazgos: {resumen.hallazgos.nuevos} nuevos ({resumen.hallazgos.altas_nuevas} de severidad ALTA), "
+            f"{resumen.hallazgos.cerrados} cerrados.",
             self,
         )
 

@@ -121,8 +121,8 @@ def test_menu_del_coordinador_y_todas_las_pantallas(qtbot, con_datos, coordinado
     ventana = VentanaPrincipal(EstadoApp(con_datos, coordinador))
     qtbot.addWidget(ventana)
     titulos = [ventana.menu.item(i).text() for i in range(ventana.menu.count())]
-    assert titulos == ["Dashboard", "Importar", "Clasificación", "Novedades", "Responsables", "KPIs",
-                       "Configuración", "Historial"]
+    assert titulos == ["Dashboard", "Importar", "Clasificación", "Novedades", "Hallazgos", "Responsables",
+                       "KPIs", "Configuración", "Historial"]
     for indice in range(ventana.menu.count()):
         ventana.menu.setCurrentRow(indice)
     ventana.menu.setCurrentRow(0)
@@ -314,6 +314,31 @@ def test_editor_de_kpis_predefinido_solo_umbrales(qtbot, con_datos, coordinador,
     pantalla.guardar()
     fila = con_datos.conexion.execute("SELECT umbral_verde, umbral_amarillo FROM kpi_definicion WHERE codigo = 'KPI-05'").fetchone()
     assert tuple(fila) == (25, 40)
+
+
+def test_pantalla_de_hallazgos(qtbot, con_datos, coordinador, sin_mensajes_modales, monkeypatch):
+    from PySide6.QtCore import QItemSelectionModel
+    from ui.pantallas import hallazgos as pantalla_hallazgos
+
+    monkeypatch.setattr(pantalla_hallazgos, "mostrar_error", lambda t, p=None: sin_mensajes_modales.append(("e", t)))
+    monkeypatch.setattr(pantalla_hallazgos.QInputDialog, "getText",
+                        staticmethod(lambda *a, **k: ("Revisado con el equipo", True)))
+    estado = EstadoApp(con_datos, coordinador)
+    pantalla = pantalla_hallazgos.PantallaHallazgos(estado)
+    qtbot.addWidget(pantalla)
+    pantalla.detectar()
+    qtbot.waitUntil(lambda: "nuevos" in pantalla.estado_deteccion.text(), timeout=15000)
+    assert pantalla.tabla.modelo.rowCount() > 0
+    pantalla.tabla.vista.selectionModel().select(
+        pantalla.tabla.filtro.index(0, 0),
+        QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+    elegido = int(pantalla.tabla.filas_seleccionadas()[0]["ID"])
+    pantalla.revisar("REVISADO")
+    fila = con_datos.conexion.execute("SELECT estado, comentario FROM hallazgo WHERE id = ?", (elegido,)).fetchone()
+    assert tuple(fila) == ("REVISADO", "Revisado con el equipo")
+    ventana = VentanaPrincipal(estado)
+    qtbot.addWidget(ventana)
+    assert ventana.campana.text().startswith("🔔")
 
 
 def test_historial_muestra_los_cambios(qtbot, con_datos, coordinador):

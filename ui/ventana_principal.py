@@ -6,8 +6,13 @@ from PySide6.QtWidgets import (
     QStackedWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
+import logging
+
 from core import parametros, reloj
+from core.analisis import hallazgos
 from core.importacion import carga
+from ui.hilos import con_conexion, ejecutar
+from ui.pantallas.hallazgos import PantallaHallazgos
 from core.version import VERSION
 from ui.componentes.selector_periodo import SelectorPeriodo
 from ui.estado import EstadoApp
@@ -21,6 +26,7 @@ from ui.pantallas.novedades import PantallaNovedades
 from ui.pantallas.responsables import PantallaResponsables
 
 TODOS_LOS_TURNOS = "Todos los turnos"
+log = logging.getLogger(__name__)
 
 
 class VentanaPrincipal(QMainWindow):
@@ -34,8 +40,8 @@ class VentanaPrincipal(QMainWindow):
         # Pantallas según el perfil; los permisos también se aplican en core/
         clases = [PantallaDashboard]
         if sesion.es_coordinador:
-            clases += [PantallaImportar, PantallaClasificacion, PantallaNovedades, PantallaResponsables,
-                       PantallaKPIs, PantallaConfiguracion, PantallaHistorial]
+            clases += [PantallaImportar, PantallaClasificacion, PantallaNovedades, PantallaHallazgos,
+                       PantallaResponsables, PantallaKPIs, PantallaConfiguracion, PantallaHistorial]
         elif sesion.tecnico_id is not None:
             clases += [PantallaNovedades, PantallaResponsables]
         self.pantallas = [clase(estado) for clase in clases]
@@ -68,6 +74,11 @@ class VentanaPrincipal(QMainWindow):
         estado.datos_cambiados.connect(self._datos_cambiados)
         self.menu.setCurrentRow(0)
         self._actualizar_importacion()
+        self._actualizar_campana()
+        # Hallazgos al iniciar (spec 08), en segundo plano
+        ejecutar(self, con_conexion(estado, lambda conexion, avance: hallazgos.detectar(conexion)),
+                 lambda resumen: estado.datos_cambiados.emit(),
+                 lambda mensaje: log.warning("No se pudieron detectar hallazgos al iniciar: %s", mensaje))
 
     def _barra_superior(self) -> QFrame:
         barra = QFrame(objectName="barraSuperior")
@@ -82,8 +93,8 @@ class VentanaPrincipal(QMainWindow):
         )
         self.importacion = QLabel()
         campana = QToolButton(text="🔔")
-        campana.setEnabled(False)
-        campana.setToolTip("Las alertas (notificaciones NOT-xx) se incorporan en la Fase 2.")
+        campana.clicked.connect(self._ir_a_hallazgos)
+        self.campana = campana
         usuario = QLabel(f"👤 {self.estado.sesion.nombre}")
         acerca = QPushButton("Acerca de")
         acerca.setObjectName("secundario")
@@ -118,6 +129,7 @@ class VentanaPrincipal(QMainWindow):
     def _datos_cambiados(self) -> None:
         self._cargar_turnos()
         self._actualizar_importacion()
+        self._actualizar_campana()
         self._pendientes = set(range(len(self.pantallas))) - {self.pila.currentIndex()}
 
     def _actualizar_importacion(self) -> None:
@@ -137,6 +149,20 @@ class VentanaPrincipal(QMainWindow):
         self.importacion.style().unpolish(self.importacion)
         self.importacion.style().polish(self.importacion)
 
+    def _actualizar_campana(self) -> None:
+        conteo = hallazgos.conteo_nuevos(self.estado.conexion, self.estado.sesion)
+        self.campana.setText(f"🔔 {conteo['ALTA']}" if conteo["ALTA"] else "🔔")
+        self.campana.setToolTip(
+            f"Hallazgos nuevos: {conteo['ALTA']} de severidad alta, {conteo['MEDIA']} media, {conteo['BAJA']} baja."
+        )
+
+    def _ir_a_hallazgos(self) -> None:
+        for indice, pantalla in enumerate(self.pantallas):
+            if isinstance(pantalla, PantallaHallazgos):
+                self.menu.setCurrentRow(indice)
+                return
+        self.menu.setCurrentRow(0)  # la consulta ve los hallazgos en el panel del dashboard
+
     def _acerca_de(self) -> None:
         QMessageBox.about(
             self, "Acerca de",
@@ -146,7 +172,7 @@ class VentanaPrincipal(QMainWindow):
         )
 
     def closeEvent(self, evento) -> None:
-        for pantalla in self.pantallas:
+        for pantalla in [self, *self.pantallas]:
             for trabajo in list(pantalla.__dict__.get("_trabajos", [])):
                 trabajo.wait(5000)
         super().closeEvent(evento)
