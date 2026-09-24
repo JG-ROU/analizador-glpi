@@ -11,6 +11,7 @@ from core.importacion import carga
 from core.version import VERSION
 from ui.componentes.selector_periodo import SelectorPeriodo
 from ui.estado import EstadoApp
+from ui.pantallas.clasificacion import PantallaClasificacion
 from ui.pantallas.configuracion import PantallaConfiguracion
 from ui.pantallas.dashboard import PantallaDashboard
 from ui.pantallas.historial import PantallaHistorial
@@ -32,7 +33,8 @@ class VentanaPrincipal(QMainWindow):
         # Pantallas según el perfil; los permisos también se aplican en core/
         clases = [PantallaDashboard]
         if sesion.es_coordinador:
-            clases += [PantallaImportar, PantallaNovedades, PantallaResponsables, PantallaConfiguracion, PantallaHistorial]
+            clases += [PantallaImportar, PantallaClasificacion, PantallaNovedades, PantallaResponsables,
+                       PantallaConfiguracion, PantallaHistorial]
         elif sesion.tecnico_id is not None:
             clases += [PantallaNovedades, PantallaResponsables]
         self.pantallas = [clase(estado) for clase in clases]

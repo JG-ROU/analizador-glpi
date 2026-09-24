@@ -117,6 +117,19 @@ Como el CSV solo trae el **estado actual**, los eventos se detectan comparando e
 
 **Derivados retirados, porque no hay columna de origen:** codigo_categoria, familia, es_hoja, cliente, estacion, causa_codigo y tiene_tipo_solucion. Si en el futuro la exportación incluye Categoría, Solución, Tipo de solución, Grupo asignado o fechas de solución y cierre, se reincorporan con una migración.
 
+## IMP-07 – Clasificación manual (Fase 2)
+La exportación no trae estación, categoría, causa ni tipo de solución. El coordinador los asigna después de importar, en la pantalla **PAN-15 Clasificación**:
+- **Listas desplegables:**
+  - estación: catálogo de estaciones editable en Configuración, con cliente e «incluir en SEGMOV»;
+  - categoría: las 62 hojas de `catalogos/tipificacion.csv`;
+  - causa: `catalogos/causas.csv`;
+  - tipo de solución: `catalogos/tipos_solucion.csv`.
+- **Lista de pendientes:** por defecto se muestran los tickets sin clasificar, primero los resueltos. Se puede asignar un mismo valor a varios tickets seleccionados a la vez.
+- **Sugerir desde Ubicación (opcional):** propone la estación cuyo nombre coincide (sin mayúsculas ni tildes) con el último nivel de la Ubicación. Solo se guarda cuando el coordinador confirma.
+- **Separada de GLPI:** la clasificación se guarda en `ticket_clasificacion`. Las reimportaciones nunca la modifican.
+- **Historial:** cada cambio queda registrado con el valor anterior y el nuevo.
+- **Derivados:** `familia` = primeras 3 letras del código de categoría; `es_hoja` = la categoría es una hoja del catálogo (todas las del catálogo lo son).
+
 ## IMP-05 – Datos personales
 - El CSV trae nombres de autores y técnicos.
 - Se guardan localmente y **nunca** se envían a servicios externos.

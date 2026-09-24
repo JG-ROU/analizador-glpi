@@ -161,6 +161,11 @@ class TablaDatos(QWidget):
                 self.vista.setColumnWidth(columna, 320)
         self._filtrar()
 
+    def filas_seleccionadas(self) -> list[dict]:
+        """Filas seleccionadas (se pueden elegir varias con Ctrl o Mayús)."""
+        filas = {self.filtro.mapToSource(i).row() for i in self.vista.selectionModel().selectedRows()}
+        return [self.modelo.fila(f) for f in sorted(filas)]
+
     def datos_visibles(self) -> pd.DataFrame:
         """Filas que pasan el filtro, en el orden mostrado y sin las columnas ocultas."""
         filas = [self.filtro.mapToSource(self.filtro.index(i, 0)).row() for i in range(self.filtro.rowCount())]

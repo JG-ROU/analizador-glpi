@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from core import clasificacion
 from core import configuracion as cfg
 from core import reloj, seguridad
 from core.db import respaldo
@@ -81,7 +82,8 @@ class PantallaConfiguracion(QWidget):
         self.pestanas = QTabWidget()
         for titulo, crear in (
             ("Parámetros", self._crear_parametros), ("KPIs", self._crear_kpis), ("Turnos", self._crear_turnos),
-            ("Técnicos", self._crear_tecnicos), ("Festivos", self._crear_festivos), ("Usuarios", self._crear_usuarios),
+            ("Técnicos", self._crear_tecnicos), ("Estaciones", self._crear_estaciones),
+            ("Festivos", self._crear_festivos), ("Usuarios", self._crear_usuarios),
             ("Respaldos", self._crear_respaldos), ("Perfiles de importación", self._crear_perfiles),
         ):
             self.pestanas.addTab(crear(), titulo)
@@ -97,7 +99,7 @@ class PantallaConfiguracion(QWidget):
 
     def actualizar(self) -> None:
         for cargar in (self._cargar_parametros, self._cargar_kpis, self._cargar_turnos, self._cargar_tecnicos,
-                       self._cargar_festivos, self._cargar_usuarios, self._cargar_respaldos, self._cargar_perfiles):
+                       self._cargar_estaciones, self._cargar_festivos, self._cargar_usuarios, self._cargar_respaldos, self._cargar_perfiles):
             cargar()
 
     def _guardado(self, errores: list[str], cambios: bool = True) -> None:
@@ -299,6 +301,65 @@ class PantallaConfiguracion(QWidget):
                 )
             except ErrorAplicacion as error:
                 errores.append(f"{self.tecnicos.item(i, 0).text()}: {error.mensaje}")
+        self._guardado(errores)
+
+    # --- Estaciones (IMP-07) ---
+
+    def _crear_estaciones(self) -> QWidget:
+        self.estaciones = _tabla(["Nombre", "Cliente", "Incluir en SEGMOV", "Activa", "Tickets asignados"])
+        nueva = QPushButton("Nueva estación…")
+        guardar = QPushButton("Guardar cambios")
+        nueva.clicked.connect(self._nueva_estacion)
+        guardar.clicked.connect(self._guardar_estaciones)
+        pagina = QWidget()
+        diseno = QVBoxLayout(pagina)
+        nota = QLabel("Catálogo de estaciones para la clasificación manual. «Incluir en SEGMOV» indica si la "
+                      "estación entra en la distribución mensual de horas (REP-08).")
+        nota.setObjectName("nota")
+        nota.setWordWrap(True)
+        diseno.addWidget(nota)
+        diseno.addWidget(self.estaciones)
+        diseno.addLayout(_botonera(nueva, guardar))
+        return pagina
+
+    def _cargar_estaciones(self) -> None:
+        filas = clasificacion.listar_estaciones(self.conexion)
+        self.estaciones.setRowCount(len(filas))
+        for i, f in enumerate(filas):
+            nombre = _celda(f["nombre"], editable=True)
+            nombre.setData(Qt.ItemDataRole.UserRole, f["id"])
+            self.estaciones.setItem(i, 0, nombre)
+            self.estaciones.setItem(i, 1, _celda(f["cliente"], editable=True))
+            self.estaciones.setItem(i, 2, _casilla(bool(f["incluir_segmov"])))
+            self.estaciones.setItem(i, 3, _casilla(bool(f["activo"])))
+            self.estaciones.setItem(i, 4, _celda(f["tickets"]))
+
+    def _nueva_estacion(self) -> None:
+        nombre, aceptado = QInputDialog.getText(self, "Nueva estación", "Nombre de la estación:")
+        if not aceptado:
+            return
+        cliente, _ = QInputDialog.getText(self, "Nueva estación", "Cliente (opcional):")
+        try:
+            clasificacion.guardar_estacion(self.conexion, self.sesion, nombre=nombre, cliente=cliente)
+        except ErrorAplicacion as error:
+            mostrar_error(error.mensaje, self)
+            return
+        self._guardado([])
+
+    def _guardar_estaciones(self) -> None:
+        errores = []
+        for i in range(self.estaciones.rowCount()):
+            try:
+                clasificacion.guardar_estacion(
+                    self.conexion, self.sesion,
+                    estacion_id=self.estaciones.item(i, 0).data(Qt.ItemDataRole.UserRole),
+                    nombre=self.estaciones.item(i, 0).text(),
+                    cliente=self.estaciones.item(i, 1).text(),
+                    incluir_segmov=_marcada(self.estaciones, i, 2),
+                    activo=_marcada(self.estaciones, i, 3),
+                )
+            except ErrorAplicacion as error:
+                errores.append(error.mensaje)
         self._guardado(errores)
 
     # --- Festivos ---

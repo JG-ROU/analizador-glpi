@@ -30,6 +30,7 @@ echo === Empaquetando (%MODO%) ===
   --add-data "config.ini.ejemplo;." ^
   --add-data "assets;assets" ^
   --add-data "core\db\migraciones;core\db\migraciones" ^
+  --add-data "spec\catalogos;spec\catalogos" ^
   --collect-data tzdata ^
   --exclude-module tkinter ^
   --exclude-module pytest ^

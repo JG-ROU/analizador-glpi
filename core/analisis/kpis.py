@@ -24,6 +24,7 @@ from core.dominio import PRIORIDADES
 from core.errores import ErrorValidacion
 from core.importacion import eventos as ev
 from core.seguridad import Sesion
+from core.texto import normalizar_titulo
 
 NOTA_APROXIMADO = (
     "≈ Aproximado: la fecha de solución es la última actualización del ticket en la "
@@ -108,6 +109,10 @@ class CalculadoraKPI:
             "KPI-06": self._kpi06_tiempo_resolucion,
             "KPI-07": self._kpi07_sla,
             "KPI-08": self._kpi08_resueltos_sin_cerrar,
+            "KPI-09": self._kpi09_completitud,
+            "KPI-10": self._kpi10_otros,
+            "KPI-11": self._kpi11_reincidencia,
+            "KPI-12": self._kpi12_reaperturas,
             "KPI-16": self._kpi16_sin_actualizar,
             "KPI-17": self._kpi17_tiempo_escalado,
         }
@@ -345,6 +350,71 @@ class CalculadoraKPI:
             "KPI-08", est.porcentaje(sin_cerrar, len(filas)), numerador=sin_cerrar,
             denominador=len(filas), cantidad=len(filas),
         )
+
+    def _kpi09_completitud(self, periodo, filtros, corte) -> ResultadoKPI:
+        """Resueltos del período con los cuatro campos de la clasificación manual."""
+        condicion, valores = filtros.sql("t")
+        fila = self.conexion.execute(
+            "SELECT COUNT(*) AS resueltos, SUM(c.estacion_id IS NOT NULL AND c.categoria_codigo IS NOT NULL "
+            "AND c.causa_codigo IS NOT NULL AND c.tipo_solucion_codigo IS NOT NULL) AS completos "
+            "FROM ticket t LEFT JOIN ticket_clasificacion c ON c.ticket_id = t.id_glpi "
+            "WHERE t.fecha_solucion >= ? AND t.fecha_solucion < ?" + condicion,
+            [_iso(periodo.inicio), _iso(periodo.fin), *valores],
+        ).fetchone()
+        resueltos, completos = fila["resueltos"], fila["completos"] or 0
+        return self._base("KPI-09", est.porcentaje(completos, resueltos), numerador=completos,
+                          denominador=resueltos, cantidad=resueltos)
+
+    def _kpi10_otros(self, periodo, filtros, corte) -> ResultadoKPI:
+        """Recibidos del período con categoría asignada: cuántos quedaron en OTR-01."""
+        condicion, valores = filtros.sql("t")
+        fila = self.conexion.execute(
+            "SELECT COUNT(*) AS clasificados, SUM(c.categoria_codigo = 'OTR-01') AS otros FROM ticket t "
+            "JOIN ticket_clasificacion c ON c.ticket_id = t.id_glpi "
+            "WHERE c.categoria_codigo IS NOT NULL AND t.fecha_apertura >= ? AND t.fecha_apertura < ?" + condicion,
+            [_iso(periodo.inicio), _iso(periodo.fin), *valores],
+        ).fetchone()
+        clasificados, otros = fila["clasificados"], fila["otros"] or 0
+        return self._base("KPI-10", est.porcentaje(otros, clasificados), numerador=otros,
+                          denominador=clasificados, cantidad=clasificados)
+
+    def _kpi11_reincidencia(self, periodo, filtros, corte) -> ResultadoKPI:
+        """Recibidos con estación cuyo caso (estación + título normalizado) tuvo otro
+        ticket en los `reincidencia_dias` días anteriores a su apertura."""
+        dias = parametros.entero(self.conexion, "reincidencia_dias")
+        condicion, valores = filtros.sql("t")
+        contados = self.conexion.execute(
+            "SELECT t.id_glpi FROM ticket t JOIN ticket_clasificacion c ON c.ticket_id = t.id_glpi "
+            "WHERE c.estacion_id IS NOT NULL AND t.fecha_apertura >= ? AND t.fecha_apertura < ?" + condicion,
+            [_iso(periodo.inicio), _iso(periodo.fin), *valores],
+        ).fetchall()
+        ids = {f[0] for f in contados}
+        ventana = self.conexion.execute(
+            "SELECT t.id_glpi, t.titulo, t.fecha_apertura, c.estacion_id FROM ticket t "
+            "JOIN ticket_clasificacion c ON c.ticket_id = t.id_glpi "
+            "WHERE c.estacion_id IS NOT NULL AND t.fecha_apertura >= ? AND t.fecha_apertura < ?",
+            [_iso(periodo.inicio - timedelta(days=dias)), _iso(periodo.fin)],
+        ).fetchall()
+        por_caso: dict[tuple, list[datetime]] = {}
+        for fila in ventana:
+            clave = (fila["estacion_id"], normalizar_titulo(fila["titulo"]))
+            por_caso.setdefault(clave, []).append(datetime.fromisoformat(fila["fecha_apertura"]))
+        reincidentes = 0
+        for fila in ventana:
+            if fila["id_glpi"] not in ids:
+                continue
+            apertura = datetime.fromisoformat(fila["fecha_apertura"])
+            otras = por_caso[(fila["estacion_id"], normalizar_titulo(fila["titulo"]))]
+            if any(apertura - timedelta(days=dias) <= o < apertura for o in otras):
+                reincidentes += 1
+        return self._base("KPI-11", est.porcentaje(reincidentes, len(ids)), numerador=reincidentes,
+                          denominador=len(ids), cantidad=len(ids))
+
+    def _kpi12_reaperturas(self, periodo, filtros, corte) -> ResultadoKPI:
+        reaperturas = self.contar_eventos(ev.REAPERTURA, periodo, filtros)
+        resueltos = self.contar_eventos(ev.SOLUCION, periodo, filtros, distintos=True)
+        return self._base("KPI-12", est.porcentaje(reaperturas, resueltos), numerador=reaperturas,
+                          denominador=resueltos, cantidad=resueltos)
 
     def _kpi16_sin_actualizar(self, periodo, filtros, corte) -> ResultadoKPI:
         abiertos = self._abiertos_al_corte(filtros, corte)

@@ -27,9 +27,14 @@ La exportación de GLPI trae solo 10 columnas (ver `03`, IMP-00). Estas decision
 - Sin equivalencias de estaciones, grupos de escalamiento ni catálogos de tipificación, causas o tipos de solución.
 - El asistente pide: coordinador, franjas de turno, prioridad P1, objetivos de SLA por prioridad y umbrales de "sin actualizar".
 
-**Pendiente de redefinir al iniciar cada fase:**
-- **Fase 2:** KPI-11, PAN-06 Estaciones, PAN-08 Tipificaciones, HAL-01, HAL-02, HAL-03, HAL-09, REP-02, REP-04, REP-08 SEGMOV y CA-10 y CA-12.
-- **Fase 3:**
+**Decisiones al iniciar la Fase 2 (2026-09-24):**
+- **Clasificación manual (IMP-07, nueva):** después de importar, el coordinador asigna a cada ticket **estación**, **categoría**, **causa** y **tipo de solución** con listas desplegables. La estación se elige de un catálogo de estaciones editable; categoría, causa y tipo de solución, de los catálogos de `spec/catalogos/`. La clasificación se guarda aparte: las reimportaciones nunca la modifican. Cada cambio queda en el historial.
+- **Estación:** es la asignada a mano, no la columna Ubicación. Un botón opcional «Sugerir desde Ubicación» propone la estación cuyo nombre coincide con el último nivel de la ubicación; el coordinador confirma antes de guardar.
+- **Caso repetido (HAL-01, KPI-11):** estación asignada + título normalizado (sin mayúsculas, tildes, números ni signos). Los tickets sin estación asignada no forman casos.
+- **Tipificación (PAN-08, REP-04, HAL-03, KPI-09, KPI-10):** usan la categoría asignada a mano. KPI-09 y KPI-10 vuelven a la especificación con esa base. **HAL-09** avisa de los tickets resueltos sin clasificar.
+- **SEGMOV (REP-08) y Estaciones (PAN-06, REP-02, HAL-02):** usan la estación asignada.
+- **KPI-13** pasa a la Fase 3, porque necesita la importación de seguimientos.
+- **Fase 3 (pendiente de redefinir):**
   - G-02 y G-07 no pueden precalificarse automáticamente;
   - CAL-06 compara la velocidad dentro de la misma **prioridad**, porque no hay categoría;
   - CA-22 se ajusta en consecuencia.
@@ -66,22 +71,24 @@ La exportación de GLPI trae solo 10 columnas (ver `03`, IMP-00). Estas decision
 
 ## Fase 2 – Análisis, hallazgos, SLA y reportes
 **Incluye:**
-- KPI-00 (editor de KPIs), KPI-11 a KPI-13.
+- IMP-07 (clasificación manual) y la pantalla nueva **PAN-15 Clasificación**, con catálogos de estaciones, categorías, causas y tipos de solución.
+- KPI-00 (editor de KPIs), KPI-09 a KPI-12 (sobre la clasificación manual). KPI-13 pasa a la Fase 3.
 - PAN-06, 08, 09, 11 y 12.
 - HAL-01 a HAL-12.
-- SLA; REP-01 a REP-05, REP-08, REP-09 y REP-11 en PDF, Excel y CSV.
+- SLA por ticket (CUMPLIDO / INCUMPLIDO / EN_RIESGO / SIN_OBJETIVO); REP-01 a REP-05, REP-08, REP-09 y REP-11 en PDF, Excel y CSV.
 - Snapshot y tendencias.
 - NOT-01 a NOT-03, NOT-05 y borradores .eml.
 - RNF-05, RNF-06 y RNF-14.
 
 **Criterios de aceptación:**
 - **CA-09** Creo el KPI "% tickets REC sin CAUSA" (porcentaje; numerador familia = REC y sin causa; denominador familia = REC), con umbrales, y aparece en el dashboard con su semáforo.
-- **CA-10** El caso de prueba de HAL-01 (4 × DAT-01 en la misma estación y semana) genera el hallazgo con los 4 tickets. Reimportar no lo duplica.
+- **CA-10** El caso de prueba de HAL-01 (4 tickets de la misma estación con el mismo título normalizado en la misma semana) genera el hallazgo con los 4 tickets. Reimportar no lo duplica.
 - **CA-11** HAL-04 marca un ticket alta sin seguimiento hace 5 horas.
 - **CA-12** SEGMOV reparte 100 horas entre 3 estaciones con 5, 3 y 2 casos → 50, 30 y 20; con casos 1, 1, 1 → la suma es exactamente 100 (ajuste de residuo).
 - **CA-13** El PDF de REP-01 incluye filtros, fecha, usuario, gráficos y paginación.
 - **CA-14** Al abrir la aplicación en un mes nuevo aparece NOT-03, y "Generar paquete mensual" produce el PDF, el Excel y el borrador .eml con el adjunto.
 - **CA-15** Durante una importación grande la interfaz no se congela y muestra el progreso.
+- **CA-23** Clasifico un ticket (estación, categoría, causa y tipo de solución), reimporto una versión posterior del CSV y la clasificación se conserva. El cambio aparece en el historial con el valor anterior y el nuevo.
 
 ## Fase 3 – Calidad de soporte
 **Incluye:**

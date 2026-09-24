@@ -24,9 +24,15 @@
 | parametro | 1 | clave (PK), valor, tipo (ENTERO / DECIMAL / TEXTO / BOOLEANO), grupo, descripcion, minimo, maximo | Umbrales editables en pantalla |
 | usuario | 1 | id, nombre, perfil (COORDINADOR / CONSULTA), tecnico_id, pin_hash, activo, creado_en | **Todos** los usuarios tienen PIN con hash bcrypt |
 | historial | 1 | id, entidad, entidad_id, accion, campo, valor_anterior, valor_nuevo, nota, usuario_id, fecha_hora | Solo inserción: triggers impiden UPDATE y DELETE |
-| hallazgo | 2 | id, regla, severidad, entidad_tipo, entidad_valor, periodo, descripcion, datos_json, detectado_en, estado (NUEVO / REVISADO / DESCARTADO), comentario, revisado_por | HAL (reglas a revisar en la Fase 2) |
+| estacion | 2 | id, nombre (único), cliente, incluir_segmov, activo, creado_en | Catálogo editable (IMP-07) |
+| categoria | 2 | codigo (PK), familia, nivel1, nivel2, nivel3, tipo_permitido, nombre_completo, descripcion, activo | Semilla: `catalogos/tipificacion.csv` |
+| causa | 2 | codigo (PK), nombre, descripcion, activo | Semilla: `catalogos/causas.csv` |
+| tipo_solucion | 2 | codigo (PK), nombre, nota, activo | Semilla: `catalogos/tipos_solucion.csv` |
+| ticket_clasificacion | 2 | ticket_id (PK, FK ticket), estacion_id, categoria_codigo, causa_codigo, tipo_solucion_codigo, actualizado_en, usuario_id | Clasificación manual (IMP-07); la importación no la toca |
+| hallazgo | 2 | id, regla, severidad, entidad_tipo, entidad_valor, periodo, descripcion, datos_json (incluye los tickets relacionados), detectado_en, actualizado_en, estado (NUEVO / REVISADO / DESCARTADO / CERRADO), comentario, revisado_por | HAL. Clave única de hallazgo abierto: regla + entidad + período |
 | snapshot | 2 | periodo (AAAA-MM o AAAA-Www), granularidad (MES / SEMANA), kpi_codigo, dimension_tipo, dimension_valor, valor, generado_en | Tendencias |
-| segmov | 2 | — | **Pendiente de redefinir:** dependía de la estación, que ahora es solo informativa |
+| segmov | 2 | periodo, estacion_id, casos, horas_asignadas, total_horas, generado_en, usuario_id | REP-08, con la estación asignada a mano |
+| paquete_mensual | 2 | periodo (PK), generado_en, usuario_id, archivos_json | NOT-03: saber si el paquete del mes anterior ya se generó |
 | seguimiento | 3 | id, ticket_id, fecha, autor, tipo (SEGUIMIENTO / TAREA / SOLUCION), privado, contenido, categoria_tarea, duracion_min, etiqueta | Opcional |
 | criterio_calidad | 3 | id (PK), aplica_a, descripcion, como_verificar, critico, automatizable, regla | Semilla: `catalogos/criterios_calidad.csv` |
 | evaluacion | 3 | id, ticket_id, tipo_caso, auditor_id, fecha, porcentaje, criticos_fallidos, resultado, retroalimentacion, version | Una evaluación vigente por ticket; las anteriores se conservan con su versión |

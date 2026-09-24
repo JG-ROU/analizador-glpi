@@ -1,12 +1,18 @@
 """Filtros de los indicadores (RN-01), traducidos a SQL parametrizado.
 
 Nunca se arma SQL con valores del usuario: los valores van siempre como parámetros.
+Los filtros de clasificación (estación, cliente, familia, categoría, causa) usan
+la clasificación manual (IMP-07).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from core import seguridad
 from core.seguridad import Sesion
+
+
+def _marcas(valores) -> str:
+    return ", ".join("?" * len(valores))
 
 
 @dataclass(frozen=True)
@@ -16,6 +22,11 @@ class Filtros:
     prioridades: tuple[int, ...] = ()
     estados: tuple[str, ...] = ()
     tipos_caso: tuple[str, ...] = ()
+    estaciones: tuple[int, ...] = ()
+    clientes: tuple[str, ...] = ()
+    familias: tuple[str, ...] = ()
+    categorias: tuple[str, ...] = ()
+    causas: tuple[str, ...] = ()
 
     def sql(self, alias: str = "t") -> tuple[str, list]:
         """Condiciones «AND …» sobre la tabla ticket (con el alias dado) y sus parámetros."""
@@ -32,9 +43,25 @@ class Filtros:
             ("tipo_caso", self.tipos_caso),
         ):
             if valores:
-                marcas = ", ".join("?" * len(valores))
-                condiciones.append(f"{alias}.{columna} IN ({marcas})")
+                condiciones.append(f"{alias}.{columna} IN ({_marcas(valores)})")
                 parametros.extend(valores)
+        clasificacion, valores_clasificacion = [], []
+        for plantilla, valores in (
+            ("c.estacion_id IN ({})", self.estaciones),
+            ("c.estacion_id IN (SELECT id FROM estacion WHERE cliente IN ({}))", self.clientes),
+            ("substr(c.categoria_codigo, 1, 3) IN ({})", self.familias),
+            ("c.categoria_codigo IN ({})", self.categorias),
+            ("c.causa_codigo IN ({})", self.causas),
+        ):
+            if valores:
+                clasificacion.append(plantilla.format(_marcas(valores)))
+                valores_clasificacion.extend(valores)
+        if clasificacion:
+            condiciones.append(
+                f"{alias}.id_glpi IN (SELECT c.ticket_id FROM ticket_clasificacion c "
+                f"WHERE {' AND '.join(clasificacion)})"
+            )
+            parametros.extend(valores_clasificacion)
         texto = "".join(f" AND {c}" for c in condiciones)
         return texto, parametros
 
@@ -48,11 +75,4 @@ def filtros_permitidos(sesion: Sesion, filtros: Filtros) -> Filtros:
     """
     if filtros.tecnico_id is None:
         return filtros
-    permitido = seguridad.tecnico_permitido(sesion, filtros.tecnico_id)
-    return Filtros(
-        tecnico_id=permitido,
-        turno=filtros.turno,
-        prioridades=filtros.prioridades,
-        estados=filtros.estados,
-        tipos_caso=filtros.tipos_caso,
-    )
+    return replace(filtros, tecnico_id=seguridad.tecnico_permitido(sesion, filtros.tecnico_id))

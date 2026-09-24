@@ -1,4 +1,5 @@
 import logging
+import shutil
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -18,6 +19,7 @@ def exe_simulado(tmp_path, monkeypatch):
     recursos = carpeta_exe / "_internal"
     recursos.mkdir(parents=True)
     (recursos / "config.ini.ejemplo").write_bytes((RAIZ / "config.ini.ejemplo").read_bytes())
+    shutil.copytree(RAIZ / "spec" / "catalogos", recursos / "spec" / "catalogos")
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(carpeta_exe / "AnalizadorGLPI.exe"))
     monkeypatch.setattr(sys, "_MEIPASS", str(recursos), raising=False)

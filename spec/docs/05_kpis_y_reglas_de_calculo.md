@@ -6,7 +6,7 @@
 > - Se agregan KPI-16 y KPI-17.
 
 ## Reglas generales de cálculo
-- **RN-01 – Período.** Todos los KPIs se calculan para un período (semana ISO, mes o rango) y admiten filtros por técnico, turno, prioridad, estado y tipo de caso. Entidad y Ubicación no son filtros de KPI; son solo informativas.
+- **RN-01 – Período.** Todos los KPIs se calculan para un período (semana ISO, mes o rango) y admiten filtros por técnico, turno, prioridad, estado y tipo de caso. Desde la Fase 2 también por la clasificación manual (IMP-07): estación, cliente, familia, categoría y causa. Entidad y Ubicación no son filtros de KPI; son solo informativas.
 - **RN-02 – Mediana, no promedio.** Los tiempos se reportan con **mediana** (y P90 como dato secundario), porque unos pocos casos largos distorsionan el promedio. Cuando el usuario lo pida, también se muestra el promedio.
 - **RN-03 – Tiempo de espera.** La exportación no trae tiempo de espera. Los reportes de tiempos indican siempre "Tiempos sin descontar espera".
 - **RN-04 – Muestra mínima.** Un indicador calculado sobre menos de `muestra_minima` (10) tickets se muestra con el ícono "⚠ muestra pequeña" y no entra en rankings.
@@ -23,7 +23,7 @@ Todo KPI, predefinido o creado, se define en `kpi_definicion` con:
 | Elemento | Opciones |
 |---|---|
 | Tipo de cálculo | CONTEO · PORCENTAJE (numerador / denominador) · MEDIANA_TIEMPO · PROMEDIO_TIEMPO · P90_TIEMPO · CONTEO_EVENTOS (por tipo de evento) |
-| Filtros (numerador y denominador) | Condiciones combinables con Y: estado, prioridad (nivel o lista), es P1, técnico, turno, escalado actualmente (sí/no), tuvo escalamiento, número de escalamientos, resuelto sin cerrar, reabierto, tipo de caso, rango de horas de resolución, tiene etiqueta X (Fase 3) |
+| Filtros (numerador y denominador) | Condiciones combinables con Y: estado, prioridad (nivel o lista), es P1, técnico, turno, escalado actualmente (sí/no), tuvo escalamiento, resuelto (sí/no), reabierto, tipo de caso, rango de horas de resolución; y de la clasificación manual: estación, cliente, familia, código de categoría (lista o prefijo), causa, tiene causa, clasificado (sí/no); tiene etiqueta X (Fase 3) |
 | Campo de tiempo | horas_resolucion · horas_hasta_cierre · horas_en_escalado · horas_primera_respuesta (requiere seguimientos) |
 | Semáforo | dirección (mayor es mejor / menor es mejor / informativo), umbral verde, umbral amarillo y meta opcional |
 | Presentación | visible en dashboard (sí/no), orden, unidad, descripción, crítico (sí/no) |
@@ -43,11 +43,11 @@ Todo KPI, predefinido o creado, se define en `kpi_definicion` con:
 | KPI-06 | Tiempo de resolución ≈ | Mediana de horas_resolucion (y P90) de los tickets resueltos en el período, por prioridad | Umbrales por prioridad en parámetros |
 | KPI-07 | Cumplimiento SLA ≈ | Resueltos a tiempo / resueltos con objetivo × 100. "A tiempo" = horas_resolucion ≤ objetivo de su prioridad (`sla_horas_<prioridad>`, uno por cada uno de los 6 niveles). No hay fecha de vencimiento en la exportación | ≥ 90 % verde · 80–90 % amarillo (propuesta) |
 | KPI-08 | Resueltos sin cerrar | De los tickets resueltos en el período, los que a la fecha de corte siguen en Resuelto (sin cierre ni reapertura) desde hace más de `dias_resuelto_sin_cerrar` / tickets resueltos en el período × 100. Así el valor nunca supera 100 %. El cierre depende del visto bueno del autor: **en la vista por técnico es informativo, no una falla del técnico** | ≤ 5 % verde (propuesta) |
-| ~~KPI-09~~ | ~~Completitud de datos~~ | **Retirado:** no hay columnas de categoría, causa ni tipo de solución | — |
-| ~~KPI-10~~ | ~~Uso de "Otros"~~ | **Retirado:** no hay columna de categoría | — |
-| KPI-11 | Reincidencia | **Pendiente de redefinir en la Fase 2:** dependía de la categoría y la estación | — |
-| KPI-12 | Reaperturas | Eventos REAPERTURA / tickets resueltos × 100 | ≤ 5 % verde (propuesta) |
-| KPI-13 | Tiempo de primera respuesta | Mediana (primer seguimiento o tarea − apertura). Requiere seguimientos | Por prioridad |
+| KPI-09 | Completitud de clasificación (Fase 2) | Tickets resueltos en el período con estación, categoría, causa y tipo de solución asignados a mano (IMP-07) / tickets resueltos en el período × 100 | ≥ 95 % verde (propuesta) |
+| KPI-10 | Uso de "Otros" (Fase 2) | Tickets con categoría OTR-01 / tickets con categoría asignada × 100 (el denominador excluye los no clasificados) | ≤ 5 % verde |
+| KPI-11 | Reincidencia (Fase 2) | Tickets recibidos en el período cuyo "caso" (estación asignada + título normalizado, HAL-01) tiene otro ticket en los 7 días anteriores / tickets recibidos con estación asignada × 100 | Menor es mejor; umbrales tras la línea base |
+| KPI-12 | Reaperturas | Eventos REAPERTURA del período / tickets resueltos en el período × 100 | ≤ 5 % verde (propuesta) |
+| KPI-13 | Tiempo de primera respuesta | **Pasa a la Fase 3** (requiere la importación de seguimientos) | Por prioridad |
 | KPI-14 | Calidad de documentación | Promedio del % de las evaluaciones del período | ≥ 90 % verde · 70–90 % amarillo |
 | KPI-15 | Índice general del área | 60 % calidad + 40 % operativo. Calidad = KPI-14. Operativo = promedio de KPI-04 (con tope de 100 para este índice), KPI-07 y (100 − KPI-08), todos en escala 0–100 | ≥ 85 verde · 70–85 amarillo (propuesta) |
 | KPI-16 | Tickets sin actualizar | Tickets abiertos cuya (fecha de corte − ultima_actualizacion) supera el umbral de su prioridad (`horas_sin_actualizar_<prioridad>`) / tickets abiertos × 100. Umbrales iniciales, tomados de HAL-04 y editables: Mayor 1 h; Muy urgente y Urgente 4 h; Mediana, Baja y Muy baja 24 h | Menor es mejor; umbrales tras la línea base |

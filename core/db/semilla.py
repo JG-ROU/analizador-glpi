@@ -1,14 +1,21 @@
-"""Datos iniciales: parámetros y KPIs predefinidos de la Fase 1 (spec 05).
+"""Datos iniciales: parámetros, KPIs predefinidos y catálogos (spec 04, 05 y 08).
 
 Se insertan solo si no existen, así que nunca sobrescriben lo que el usuario editó.
 Los valores que la especificación no fija (objetivos de SLA, umbrales de KPI-06)
 quedan vacíos: los define el coordinador en el asistente o en Configuración.
+Los catálogos de categorías, causas y tipos de solución se leen de spec/catalogos/.
 """
 
+import csv
 import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 
+from core import rutas
 from core.dominio import PRIORIDADES
+from core.errores import ErrorAplicacion
+
+CARPETA_CATALOGOS = Path("spec") / "catalogos"
 
 # Umbrales iniciales de "sin actualizar" por nivel de prioridad (spec 05, KPI-16)
 _HORAS_SIN_ACTUALIZAR = {6: 1, 5: 4, 4: 4, 3: 24, 2: 24, 1: 24}
@@ -92,6 +99,7 @@ def _parametros() -> list[ParametroInicial]:
                 minimo=0,
             )
         )
+    parametros += _parametros_fase2()
     for prioridad in PRIORIDADES:
         for color in ("verde", "amarillo"):
             parametros.append(
@@ -104,6 +112,39 @@ def _parametros() -> list[ParametroInicial]:
                 )
             )
     return parametros
+
+
+def _parametros_fase2() -> list[ParametroInicial]:
+    """Umbrales de hallazgos (spec 08) y de SLA en riesgo (spec 09)."""
+    return [
+        ParametroInicial("rep_semana_umbral", "3", "ENTERO", "Hallazgos",
+                         "HAL-01: veces que un caso se repite en una semana para alerta MEDIA.", minimo=2),
+        ParametroInicial("rep_semana_alta", "5", "ENTERO", "Hallazgos",
+                         "HAL-01: veces en una semana para alerta ALTA.", minimo=2),
+        ParametroInicial("rep_mes_umbral", "5", "ENTERO", "Hallazgos",
+                         "HAL-01: veces que un caso se repite en un mes para alerta MEDIA.", minimo=2),
+        ParametroInicial("rep_mes_alta", "8", "ENTERO", "Hallazgos",
+                         "HAL-01: veces en un mes para alerta ALTA.", minimo=2),
+        ParametroInicial("pico_semanas", "8", "ENTERO", "Hallazgos",
+                         "HAL-02: semanas anteriores con las que se compara el volumen de una estación.", minimo=2),
+        ParametroInicial("pico_desviaciones", "2", "DECIMAL", "Hallazgos",
+                         "HAL-02: desviaciones estándar sobre la media para considerar un pico.", minimo=0),
+        ParametroInicial("pico_minimo", "5", "ENTERO", "Hallazgos",
+                         "HAL-02: tickets mínimos en la semana para considerar un pico.", minimo=1),
+        ParametroInicial("crecimiento_factor", "1.5", "DECIMAL", "Hallazgos",
+                         "HAL-03: veces el promedio de los 3 meses anteriores para categoría en crecimiento.", minimo=1),
+        ParametroInicial("crecimiento_minimo", "5", "ENTERO", "Hallazgos",
+                         "HAL-03: tickets mínimos en el mes para categoría en crecimiento.", minimo=1),
+        ParametroInicial("dias_escalado_alta", "10", "ENTERO", "Hallazgos",
+                         "HAL-06: días escalado a partir de los cuales la alerta es ALTA.", minimo=1),
+        ParametroInicial("sobrecarga_factor_mediana", "1.5", "DECIMAL", "Hallazgos",
+                         "HAL-08: veces la mediana del equipo en abiertos para sobrecarga.", minimo=1),
+        ParametroInicial("reincidencia_dias", "7", "ENTERO", "Hallazgos",
+                         "KPI-11: días hacia atrás en que se busca el mismo caso.", minimo=1),
+        ParametroInicial("sla_riesgo_porcentaje", "80", "DECIMAL", "SLA",
+                         "Porcentaje del objetivo consumido a partir del cual un ticket abierto está EN RIESGO.",
+                         minimo=1, maximo=100),
+    ]
 
 
 KPIS_PREDEFINIDOS = (
@@ -154,6 +195,28 @@ KPIS_PREDEFINIDOS = (
         "PORCENTAJE", "%", "MENOR_MEJOR", umbral_verde=5, critico=True,
     ),
     KpiInicial(
+        "KPI-09", "Completitud de clasificación",
+        "Tickets resueltos en el período con estación, categoría, causa y tipo de solución "
+        "asignados / tickets resueltos en el período × 100.",
+        "PORCENTAJE", "%", "MAYOR_MEJOR", umbral_verde=95,
+    ),
+    KpiInicial(
+        "KPI-10", "Uso de «Otros»",
+        "Tickets clasificados como OTR-01 / tickets con categoría asignada × 100.",
+        "PORCENTAJE", "%", "MENOR_MEJOR", umbral_verde=5,
+    ),
+    KpiInicial(
+        "KPI-11", "Reincidencia",
+        "Tickets recibidos cuyo caso (estación + título) se repitió en los días configurados / "
+        "tickets recibidos con estación asignada × 100.",
+        "PORCENTAJE", "%", "MENOR_MEJOR",
+    ),
+    KpiInicial(
+        "KPI-12", "Reaperturas",
+        "Reaperturas del período / tickets resueltos en el período × 100.",
+        "PORCENTAJE", "%", "MENOR_MEJOR", umbral_verde=5,
+    ),
+    KpiInicial(
         "KPI-16", "Tickets sin actualizar",
         "Tickets abiertos sin actualización por más horas que el umbral de su "
         "prioridad / tickets abiertos × 100.",
@@ -168,9 +231,45 @@ KPIS_PREDEFINIDOS = (
 )
 
 
+def _leer_catalogo(nombre: str) -> list[dict]:
+    ruta = rutas.directorio_recursos() / CARPETA_CATALOGOS / nombre
+    try:
+        with ruta.open(encoding="utf-8-sig", newline="") as archivo:
+            return list(csv.DictReader(archivo))
+    except OSError as error:
+        raise ErrorAplicacion(
+            f"No se encontró el catálogo «{nombre}». Reinstale la aplicación.", detalle=repr(error)
+        ) from error
+
+
+def _sembrar_catalogos(conexion: sqlite3.Connection) -> None:
+    """Categorías, causas y tipos de solución (IMP-07). Solo si la BD ya tiene esas tablas."""
+    tablas = {f[0] for f in conexion.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "categoria" not in tablas:
+        return
+    conexion.executemany(
+        "INSERT OR IGNORE INTO categoria (codigo, familia, nivel1, nivel2, nivel3, tipo_permitido, "
+        "nombre_completo, descripcion) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (f["codigo"], f["familia"], f["nivel1"], f["nivel2"] or None, f["nivel3"] or None,
+             f["tipo_permitido"], f["nombre_glpi_completo"], f["descripcion"])
+            for f in _leer_catalogo("tipificacion.csv")
+        ],
+    )
+    conexion.executemany(
+        "INSERT OR IGNORE INTO causa (codigo, nombre, descripcion) VALUES (?, ?, ?)",
+        [(f["codigo"], f["causa"], f["cuando_usar"]) for f in _leer_catalogo("causas.csv")],
+    )
+    conexion.executemany(
+        "INSERT OR IGNORE INTO tipo_solucion (codigo, nombre, nota) VALUES (?, ?, ?)",
+        [(f["codigo"], f["tipo_solucion"], f["nota"] or None) for f in _leer_catalogo("tipos_solucion.csv")],
+    )
+
+
 def sembrar(conexion: sqlite3.Connection) -> None:
-    """Inserta los parámetros y KPIs que falten, en una sola transacción."""
+    """Inserta los parámetros, KPIs y catálogos que falten, en una sola transacción."""
     with conexion:
+        _sembrar_catalogos(conexion)
         conexion.executemany(
             "INSERT OR IGNORE INTO parametro "
             "(clave, valor, tipo, grupo, descripcion, minimo, maximo) "

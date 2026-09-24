@@ -17,6 +17,7 @@ from core.importacion import carga
 from test_kpis import escenario
 from ui import estilos
 from ui.estado import EstadoApp
+from ui.pantallas import clasificacion as pantalla_clasificacion
 from ui.pantallas import configuracion as pantalla_configuracion
 from ui.pantallas import dashboard, importar, inicio_sesion, novedades, responsables
 from ui.pantallas.dashboard import PantallaDashboard
@@ -27,7 +28,8 @@ from ui.ventana_principal import VentanaPrincipal
 @pytest.fixture(autouse=True)
 def sin_mensajes_modales(monkeypatch):
     mensajes = []
-    for modulo in (importar, dashboard, novedades, responsables, pantalla_configuracion, inicio_sesion):
+    for modulo in (importar, dashboard, novedades, responsables, pantalla_configuracion, inicio_sesion,
+                   pantalla_clasificacion):
         for nombre in ("mostrar_error", "mostrar_info"):
             if hasattr(modulo, nombre):
                 monkeypatch.setattr(modulo, nombre, lambda texto, padre=None, n=nombre: mensajes.append((n, texto)))
@@ -118,7 +120,8 @@ def test_menu_del_coordinador_y_todas_las_pantallas(qtbot, con_datos, coordinado
     ventana = VentanaPrincipal(EstadoApp(con_datos, coordinador))
     qtbot.addWidget(ventana)
     titulos = [ventana.menu.item(i).text() for i in range(ventana.menu.count())]
-    assert titulos == ["Dashboard", "Importar", "Novedades", "Responsables", "Configuración", "Historial"]
+    assert titulos == ["Dashboard", "Importar", "Clasificación", "Novedades", "Responsables", "Configuración",
+                       "Historial"]
     for indice in range(ventana.menu.count()):
         ventana.menu.setCurrentRow(indice)
     ventana.menu.setCurrentRow(0)
@@ -213,7 +216,7 @@ def test_ca07_dashboard_en_menos_de_2_segundos(qtbot, contexto, coordinador, tmp
     qtbot.waitUntil(lambda: "calculado en" in pantalla.tiempo.text(), timeout=20000)
     duracion = time.perf_counter() - inicio
     assert duracion < 2.0, f"El dashboard tardó {duracion:.2f} s"
-    assert pantalla.tarjetas.count() == 10
+    assert pantalla.tarjetas.count() == 14
 
 
 # --- PAN-04 y PAN-05 ---
@@ -257,6 +260,30 @@ def test_configuracion_guarda_con_historial(qtbot, con_datos, coordinador, sin_m
     pantalla._crear_respaldo()
     assert pantalla.respaldos.rowCount() == 1
     assert pantalla.respaldos.item(0, 1).text() == "manual"
+
+
+def test_clasificacion_de_varios_tickets(qtbot, con_datos, coordinador, sin_mensajes_modales):
+    from PySide6.QtCore import QItemSelectionModel
+    from core import clasificacion as cl
+
+    norte = cl.guardar_estacion(con_datos.conexion, coordinador, nombre="Norte")
+    pantalla = pantalla_clasificacion.PantallaClasificacion(EstadoApp(con_datos, coordinador))
+    qtbot.addWidget(pantalla)
+    pantalla.actualizar()
+    total = pantalla.tabla.modelo.rowCount()
+    assert total == 12  # todos pendientes
+    seleccion = pantalla.tabla.vista.selectionModel()
+    for fila in (0, 1):
+        seleccion.select(pantalla.tabla.filtro.index(fila, 0),
+                         QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+    elegidos = [int(f["ID"]) for f in pantalla.tabla.filas_seleccionadas()]
+    pantalla.combos[cl.ESTACION].setCurrentIndex(pantalla.combos[cl.ESTACION].findData(norte))
+    pantalla.combos[cl.CATEGORIA].setCurrentIndex(pantalla.combos[cl.CATEGORIA].findData("DAT-01"))
+    pantalla.aplicar()
+    filas = con_datos.conexion.execute(
+        "SELECT ticket_id, estacion_id, categoria_codigo FROM ticket_clasificacion ORDER BY ticket_id").fetchall()
+    assert [tuple(f) for f in filas] == [(i, norte, "DAT-01") for i in sorted(elegidos)]
+    assert pantalla.tabla.modelo.rowCount() == total  # siguen pendientes: faltan causa y tipo de solución
 
 
 def test_historial_muestra_los_cambios(qtbot, con_datos, coordinador):
