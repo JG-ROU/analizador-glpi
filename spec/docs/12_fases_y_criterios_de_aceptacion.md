@@ -43,6 +43,9 @@ La exportación de GLPI trae solo 10 columnas (ver `03`, IMP-00). Estas decision
 - **KPI-15** usa la fórmula de la spec 05 (60 % calidad + 40 % operativo), con los pesos en parámetros. **Falta confirmar con el coordinador** que coincide con la hoja KPI_SOPORTE.
 - **CSV de seguimientos:** se importa con mapeo de columnas y perfil, igual que el de tickets. Los campos son los de `03`: ticket, fecha, autor, tipo, privado, contenido, categoría de tarea y duración. **Falta validar con una exportación real.**
 - **El tipo de caso corregido en la evaluación** actualiza el tipo de caso del ticket (origen MANUAL) y se respeta al reimportar.
+- **Resumen semanal por técnico:** cubre la última semana ISO completa y solo se genera para técnicos con tickets atendidos o evaluaciones en esa semana. El destinatario del `.eml` va vacío, porque la aplicación no guarda correos de técnicos; el coordinador lo completa en Outlook.
+- **REP-06** es solo para el coordinador, como indica la spec 09. El usuario de consulta ve su propio histórico en la pantalla Calidad.
+- **REP-11** incluye la evaluación vigente de cada ticket: porcentaje, resultado, críticos fallidos, fecha, versión y retroalimentación.
 
 ## Fase 1 – Importación, base y dashboard
 **Incluye:**

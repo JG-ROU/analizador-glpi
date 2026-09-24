@@ -1,4 +1,4 @@
-# Manual de usuario – Analizador GLPI (Fases 1 y 2)
+# Manual de usuario – Analizador GLPI (Fases 1 a 3)
 
 ## 1. Instalación
 
@@ -36,7 +36,7 @@ Elija su usuario y escriba su PIN. Después de 5 intentos fallidos seguidos, el 
 | Perfil | Qué ve |
 |---|---|
 | Coordinador | Todo |
-| Consulta con técnico asociado | Dashboard, sus propios tickets en Novedades, Estaciones, Tipificaciones, sus propias métricas en Responsables y los reportes del equipo |
+| Consulta con técnico asociado | Dashboard, sus propios tickets en Novedades, Estaciones, Tipificaciones, sus propias métricas en Responsables y Calidad, y los reportes del equipo |
 | Consulta sin técnico (jefatura) | Dashboard, Estaciones, Tipificaciones y los reportes del equipo, sin métricas individuales |
 
 ## 4. Avisos al iniciar y campana
@@ -48,6 +48,7 @@ Debajo de la barra superior aparece una **barra de avisos** cuando hay algo pend
 | **NOT-01** | La última importación es de hace más de 1 día (se cambia en el parámetro `dias_importacion_desactualizada`). |
 | **NOT-02** | Hay hallazgos nuevos de severidad ALTA. |
 | **NOT-03** | El paquete mensual del mes anterior no se ha generado (solo coordinador). |
+| **NOT-04** | Los lunes, si quedan tickets de la muestra semanal de calidad sin evaluar (solo coordinador). |
 
 El botón "Ir a…" lleva a la pantalla correspondiente. La **campana** muestra cuántos hallazgos nuevos de severidad ALTA hay; al pulsarla se abre la pantalla de Hallazgos.
 
@@ -71,6 +72,15 @@ En la pantalla **Importar**:
    - los **snapshots** de los meses y semanas ya cerrados;
    - los avisos **NOT-02** y **NOT-05** (KPI crítico en rojo), que aparecen en el resumen.
 5. **Exportar filas con error** genera un CSV con el motivo de cada una.
+
+### Seguimientos y tareas
+
+La pestaña **Seguimientos y tareas** importa un segundo CSV de GLPI con las notas de cada ticket (ID del ticket, fecha, autor y contenido; tipo, privado, categoría de tarea y duración son opcionales). Importe primero el CSV de tickets: las notas de tickets desconocidos se marcan en rojo. Una nota ya importada no se duplica aunque el archivo se cargue de nuevo. Las notas sirven para:
+- el tiempo de primera respuesta (KPI-13);
+- el % de tickets bien documentados (KPI-14);
+- precalificar los criterios de calidad y mostrarlas al evaluar.
+
+La etiqueta al inicio de una nota, por ejemplo `[DIAG]` o `[ESC-N2]`, se guarda aparte para los criterios que la piden.
 
 ## 6. Clasificación (coordinador)
 
@@ -127,7 +137,7 @@ Es la lista de tickets abiertos y de los recibidos en el período. Tiene accesos
 - P1 abiertos;
 - escalados antiguos.
 
-**Doble clic** en un ticket abre su detalle: datos, línea de tiempo de eventos y cambios detectados.
+**Doble clic** en un ticket abre su detalle: datos y pestañas de eventos, cambios detectados, seguimientos y calidad (la evaluación vigente). El coordinador tiene además el botón **Evaluar calidad**.
 
 ## 9. Hallazgos (coordinador)
 
@@ -167,9 +177,39 @@ Usan la estación y la categoría asignadas en Clasificación.
 
 ## 11. Responsables
 
-Muestra las métricas de cada técnico en el período. **La cantidad de tickets es informativa (carga), no una calificación.** El usuario de consulta solo ve su propia fila. **REP-03** genera el reporte.
+Muestra las métricas de cada técnico en el período, incluido el **% documentación** (KPI-14). **La cantidad de tickets es informativa (carga), no una calificación.** El usuario de consulta solo ve su propia fila. **REP-03** genera el reporte.
 
-## 12. Reportes
+## 12. Calidad
+
+La calidad se mide para mejorar y conversar, no para castigar. Ninguna métrica se usa sola, los tiempos se comparan dentro de la misma categoría y cada técnico se compara primero consigo mismo.
+
+**Evaluar tickets (coordinador).**
+1. Elija la **semana**: se propone una **muestra** con todos los P1, los escalados largos, al menos un ticket por técnico cada 2 semanas y otros al azar, hasta el parámetro `tickets_auditoria_semana`. Use **Agregar a la muestra** y **Quitar de la muestra** para ajustarla.
+2. Elija un ticket y pulse **Evaluar**, o escriba su número.
+3. Confirme el **tipo de caso**. Los criterios generales se muestran siempre, y los específicos según el tipo; por ejemplo, un escalamiento suma 6 criterios propios. Los marcados **CRÍTICO** pesan más.
+4. Cada casilla alterna entre **✔ cumple**, **✖ no cumple** y **— no aplica**. Los marcados **AUTO** ya vienen precalificados con los datos y las notas del ticket. Si cambia uno, debe escribir una nota.
+5. El **puntaje** se actualiza al marcar. Escriba la **retroalimentación** y pulse **Guardar evaluación**.
+
+El resultado es **Conforme**, **Por mejorar** o **No conforme** según los umbrales `umbral_conforme` y `umbral_por_mejorar`. Un crítico fallido da No conforme. Reevaluar crea una versión nueva y la anterior queda en el Historial.
+
+**Histórico por técnico.** Semana a semana: atendidos, abiertos, tiempos, SLA y % documentación, con flechas ↑ ↓ → frente a la semana anterior y al promedio de 4 semanas.
+
+**Rendimiento.** Por técnico:
+- tiempos de primera respuesta, solución y cierre;
+- el **índice de velocidad**: menos de 1 es más rápido que el equipo en casos de la misma categoría;
+- % de cierre formal, reaperturas y escalamientos por familia.
+
+**Comparativo y ranking (solo coordinador).**
+- El índice combina calidad, velocidad y completitud con los pesos de Configuración.
+- Excluye a quien no alcanza la muestra mínima o está marcado "no incluir en ranking".
+- El **radar** compara al técnico elegido con el promedio del equipo.
+- Es de uso interno: no lo publique.
+
+**Incumplimiento por criterio.** Porcentaje de "no cumple" por criterio. Los que llegan al 30 % se marcan como tema de capacitación.
+
+El usuario de consulta ve solo su propio histórico, rendimiento e incumplimiento, nunca el ranking.
+
+## 13. Reportes
 
 Elija el reporte, el formato (**PDF**, **Excel** o **CSV**) y pulse **Generar reporte**. Se usan el período y los filtros de la barra superior. El archivo queda en `exportaciones\AAAA-MM\`, y **Abrir archivo** lo abre.
 
@@ -180,21 +220,25 @@ Elija el reporte, el formato (**PDF**, **Excel** o **CSV**) y pulse **Generar re
 | REP-03 | Responsables |
 | REP-04 | Tipificaciones |
 | REP-05 | Hallazgos |
+| REP-06 | Calidad de soporte – histórico (coordinador): una hoja por técnico, semana a semana |
+| REP-07 | Calidad de soporte – comparativo (coordinador): ranking, radar, tendencia de 3 meses e incumplimiento por criterio. Uso interno |
 | REP-08 | Distribución de horas SEGMOV (coordinador): escriba el **total de horas del mes**. Se reparten entre las estaciones marcadas "Incluir en SEGMOV" según sus casos, y la suma da siempre el total exacto. Generarlo guarda la distribución del mes. |
 | REP-09 | SLA: cumplimiento por prioridad, cliente, familia y técnico; tickets fuera de SLA o en riesgo; tendencia de 6 meses |
-| REP-11 | Datos para auditoría (coordinador) |
+| REP-11 | Datos para auditoría (coordinador), con la evaluación de calidad vigente de cada ticket |
 
 **Anonimizar autores y técnicos** reemplaza los nombres por "Persona 001", "Persona 002"… Úsela al compartir fuera del equipo. En el PDF, los textos muy largos se recortan; el Excel los trae completos.
 
 ### Paquete mensual (coordinador)
 
 **Generar paquete mensual…** pide el resumen ejecutivo y el plan de mejora, y crea:
-- un **PDF** y un **Excel** con: resumen ejecutivo, indicadores, SLA, tendencias de 6 meses, los 5 casos más repetidos, hallazgos, SEGMOV (si ya generó REP-08 para ese mes) y plan de mejora;
+- un **PDF** y un **Excel** con: resumen ejecutivo, indicadores, SLA, tendencias de 6 meses, los 5 casos más repetidos, hallazgos, calidad del área (KPI-14, KPI-15, resultados de las evaluaciones y criterios con más incumplimiento, sin datos por técnico), SEGMOV (si ya generó REP-08 para ese mes) y plan de mejora;
 - un **borrador de correo** (`.eml`) con el PDF adjunto, que se abre en Outlook para revisar y enviar. El destinatario es el parámetro `correo_jefatura`. El aplicativo no envía nada por su cuenta.
 
 Tras generarlo, el aviso NOT-03 desaparece. **Borrador de correo: hallazgos ALTA** prepara un correo con los hallazgos nuevos de severidad alta.
 
-## 13. KPIs (coordinador)
+**Resúmenes semanales por técnico** crea un borrador `.eml` por cada técnico con actividad en la última semana completa. Cada uno trae **solo sus propias** métricas, su comparación consigo mismo y la retroalimentación de sus evaluaciones, nunca el ranking ni datos de otros. El destinatario va vacío: complételo en Outlook antes de enviar.
+
+## 14. KPIs (coordinador)
 
 - **KPIs predefinidos:** se cambian sus umbrales verde y amarillo, la meta, la visibilidad en el dashboard y la marca de crítico. No se pueden eliminar.
 - **Nuevo KPI:**
@@ -204,11 +248,11 @@ Tras generarlo, el aviso NOT-03 desaparece. **Borrador de correo: hallazgos ALTA
   4. **Vista previa** muestra el valor en el período actual sin guardar; **Guardar** lo agrega al dashboard.
 - **Tendencia de 12 meses:** aparece al elegir un KPI, tomada de los snapshots. **Generar snapshot del período** guarda los valores del mes o la semana elegidos.
 
-## 14. Tablas y exportación
+## 15. Tablas y exportación
 
 Todas las tablas permiten ordenar, buscar en todas las columnas o en una, y exportar a Excel o CSV lo que se ve. La casilla **"Anonimizar personas al exportar"** reemplaza los nombres de personas.
 
-## 15. Configuración (coordinador)
+## 16. Configuración (coordinador)
 
 | Pestaña | Para qué |
 |---|---|
@@ -221,7 +265,7 @@ Todas las tablas permiten ordenar, buscar en todas las columnas o en una, y expo
 | Respaldos | Crear un respaldo manual o restaurar uno (antes se respalda la base actual) |
 | Perfiles de importación | Ver y eliminar perfiles |
 
-## 16. Historial
+## 17. Historial
 
 Es la auditoría de los cambios manuales:
 - parámetros, KPIs, técnicos y estaciones;
@@ -231,7 +275,7 @@ Es la auditoría de los cambios manuales:
 
 La base de datos impide modificar o borrar estos registros.
 
-## 17. Respaldos y problemas
+## 18. Respaldos y problemas
 
 - **Respaldos automáticos:** antes de cada importación y uno diario. Se conservan 30 días.
 - **Mensajes de error:** aparecen en español. El detalle queda en `logs\app.log`.

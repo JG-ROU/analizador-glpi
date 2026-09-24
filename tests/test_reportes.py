@@ -191,9 +191,9 @@ def test_ca13_pdf_rep01_con_filtros_fecha_usuario_graficos_y_paginacion(datos, c
     assert imagenes == 2
 
 
-@pytest.mark.parametrize("codigo", ["REP-02", "REP-03", "REP-04", "REP-05", "REP-09", "REP-11"])
+@pytest.mark.parametrize("codigo", ["REP-02", "REP-03", "REP-04", "REP-05", "REP-06", "REP-07", "REP-09", "REP-11"])
 @pytest.mark.parametrize("formato", [catalogo.PDF, catalogo.EXCEL, catalogo.CSV])
-def test_reportes_de_fase_2_en_los_tres_formatos(datos, coordinador, tmp_path, codigo, formato):
+def test_reportes_en_los_tres_formatos(datos, coordinador, tmp_path, codigo, formato):
     from core import clasificacion as cl
     from core.analisis import hallazgos
     norte = cl.guardar_estacion(datos, coordinador, nombre="Norte", cliente="Cliente A")

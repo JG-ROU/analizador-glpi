@@ -2,7 +2,7 @@
 
 Aplicativo de escritorio portable para Windows que convierte las exportaciones CSV de **GLPI 9.1.4** en indicadores confiables para un equipo de soporte de aplicaciones 24/7. Funciona sin internet y guarda los datos solo en el equipo, en una base SQLite.
 
-**Estado:** Fases 1 y 2 terminadas. La Fase 3 (calidad de soporte) está descrita en [spec/docs/12_fases_y_criterios_de_aceptacion.md](spec/docs/12_fases_y_criterios_de_aceptacion.md).
+**Estado:** Fases 1, 2 y 3 terminadas (versión 0.3.0). Las fases están descritas en [spec/docs/12_fases_y_criterios_de_aceptacion.md](spec/docs/12_fases_y_criterios_de_aceptacion.md).
 
 ## Qué hace
 
@@ -21,7 +21,13 @@ Aplicativo de escritorio portable para Windows que convierte las exportaciones C
 - **Reportes** REP-01 a REP-05, REP-08 (SEGMOV), REP-09 y REP-11 en PDF, Excel y CSV, con opción de anonimizar.
 - **Paquete mensual y avisos:** paquete mensual en PDF y Excel con borrador de correo `.eml`, y avisos NOT-01, 02, 03 y 05.
 
-**Pantallas:** Dashboard, Importar, Clasificación, Novedades, Hallazgos, Estaciones, Tipificaciones, Responsables, Reportes, KPIs, Configuración e Historial.
+**Fase 3: calidad de soporte**
+- **Seguimientos y tareas:** segunda importación con las notas de cada ticket, sin duplicados. Alimenta la primera respuesta (KPI-13) y la documentación.
+- **Evaluación de calidad:** criterios por tipo de caso con casillas cumple / no cumple / no aplica. Los criterios verificables se precalifican y se pueden corregir con nota. Puntaje con críticos, versiones de cada evaluación y muestra semanal sugerida (CAL-01 a CAL-04).
+- **Métricas:** histórico semana a semana con flechas, rendimiento con velocidad normalizada por categoría, ranking solo para el coordinador (con muestra mínima y exclusiones) e incumplimiento por criterio (CAL-05 a CAL-08). KPI-13, KPI-14 y KPI-15.
+- **Reportes** REP-06 y REP-07, calidad del área en el paquete mensual, evaluaciones en REP-11, resúmenes semanales por técnico en `.eml` y aviso NOT-04 los lunes.
+
+**Pantallas:** Dashboard, Importar, Clasificación, Novedades, Hallazgos, Estaciones, Tipificaciones, Responsables, Calidad, Reportes, KPIs, Configuración e Historial.
 
 ## Requisitos para desarrollar
 
@@ -62,12 +68,13 @@ core/                   lógica sin Qt (se prueba sin interfaz)
   parametros.py, configuracion.py, dominio.py, errores.py
   db/                   conexión, migraciones versionadas (migraciones/NNN_*.sql), semillas, respaldos
   fuentes/              FuenteDatos (interfaz), fuente_csv.py y fuente_api.py (Fase 4)
-  importacion/          mapeo, validación, derivados, eventos y carga incremental
+  importacion/          mapeo, validación, derivados, eventos, carga incremental y seguimientos
   analisis/             períodos, estadística, filtros y condiciones, KPIs, semáforo, SLA, series, novedades,
-                        responsables, hallazgos, snapshot, distribución (estaciones y tipificaciones), SEGMOV
-  reportes/             gráficos (matplotlib), Excel/PDF/CSV, catálogo de reportes y paquete mensual
+                        responsables, hallazgos, snapshot, distribución (estaciones y tipificaciones), SEGMOV,
+                        calidad (criterios, precalificación, puntaje) y calidad_metricas (CAL-04 a CAL-08)
+  reportes/             gráficos (matplotlib), Excel/PDF/CSV, catálogo de reportes, paquete mensual y resúmenes semanales
   clasificacion.py      clasificación manual de tickets y catálogo de estaciones (IMP-07)
-  notificaciones.py     avisos NOT-01, 02, 03 y 05; correo.py: borradores .eml
+  notificaciones.py     avisos NOT-01 a NOT-05; correo.py: borradores .eml
 ui/                     PySide6: ventana, pantallas, componentes, hilos de trabajo
 assets/estilos/         estilo QSS corporativo
 data/muestras/          generador de CSV ficticios en formato GLPI

@@ -5,6 +5,7 @@ Los cuadros de mensaje modales se reemplazan para que las pruebas no se detengan
 
 import time
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -373,13 +374,30 @@ def test_pantalla_de_reportes_genera_pdf(qtbot, con_datos, coordinador):
     pantalla = PantallaReportes(EstadoApp(con_datos, coordinador))
     qtbot.addWidget(pantalla)
     pantalla.actualizar()
-    assert pantalla.lista.count() == 8
+    assert pantalla.lista.count() == 10
     pantalla.lista.setCurrentRow(0)
     pantalla.generar()
     qtbot.waitUntil(lambda: pantalla.ultimo is not None, timeout=20000)
     assert pantalla.ultimo.suffix == ".pdf" and pantalla.ultimo.exists()
-    pantalla.lista.setCurrentRow(5)  # REP-08
+    pantalla.lista.setCurrentRow(7)  # REP-08
     assert pantalla.formulario.isRowVisible(pantalla.horas)
+
+
+def test_resumenes_semanales_desde_reportes(qtbot, con_datos, coordinador, monkeypatch):
+    from core import reloj
+    from ui.pantallas import reportes as pantalla_reportes
+
+    abiertos = []
+    monkeypatch.setattr(pantalla_reportes.QDesktopServices, "openUrl", staticmethod(lambda url: abiertos.append(url)))
+    monkeypatch.setattr(reloj, "ahora", lambda: datetime(2026, 9, 9, 8))  # semana resumida: 31-ago a 6-sep
+    pantalla = pantalla_reportes.PantallaReportes(EstadoApp(con_datos, coordinador))
+    qtbot.addWidget(pantalla)
+    boton = next(b for b in pantalla.findChildren(pantalla_reportes.QPushButton)
+                 if b.text() == "Resúmenes semanales por técnico")
+    boton.click()
+    qtbot.waitUntil(lambda: "borradores de resumen semanal" in pantalla.resultado.text(), timeout=30000)
+    carpeta = Path(abiertos[0].toLocalFile())
+    assert carpeta.name.startswith("resumenes_") and list(carpeta.glob("resumen_*.eml"))
 
 
 def test_barra_de_avisos_al_iniciar(qtbot, con_datos, coordinador):

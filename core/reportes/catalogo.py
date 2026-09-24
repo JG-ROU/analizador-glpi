@@ -1,4 +1,4 @@
-"""Catálogo de reportes (spec 09): REP-01 a REP-05, REP-08, REP-09 y REP-11.
+"""Catálogo de reportes (spec 09): REP-01 a REP-09 y REP-11 (REP-10 en paquete.py).
 
 Formatos: PDF (fpdf2, con encabezado, filtros, fecha, usuario y paginación),
 Excel (openpyxl, con tablas y gráficos como imagen) y CSV (la tabla principal).
@@ -8,13 +8,15 @@ código, el período y la fecha y hora de generación en el nombre.
 
 import sqlite3
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 
 from core import parametros, reloj, seguridad
 from core.analisis import distribucion, hallazgos, responsables, segmov, semaforo, series, sla, snapshot
+from core.analisis import calidad_metricas as met
+from core.analisis.calidad import NOMBRE_RESULTADO
 from core.analisis import estadistica as est
 from core.analisis.filtros import Filtros, filtros_permitidos
 from core.analisis.kpis import NOMBRE_PRIORIDAD, CalculadoraKPI, ResultadoKPI, criticidad_global
@@ -69,6 +71,18 @@ REPORTES = (
         "REP-05", "Hallazgos",
         "Hallazgos del período por regla y severidad, estado de revisión y casos repetidos.",
         solo_coordinador=False,
+    ),
+    DefinicionReporte(
+        "REP-06", "Calidad de soporte – histórico",
+        "Por técnico, semana a semana: atendidos, abiertos, tiempos, SLA y % de documentación, con "
+        "subidas y bajadas frente a la semana anterior y al promedio de 4 semanas.",
+        solo_coordinador=True,
+    ),
+    DefinicionReporte(
+        "REP-07", "Calidad de soporte – comparativo",
+        "Ranking CAL-07 (calidad, velocidad y completitud), radar frente al promedio del equipo, tendencia "
+        "de 3 meses e incumplimiento por criterio (CAL-08). Uso interno: no publicar.",
+        solo_coordinador=True,
     ),
     DefinicionReporte(
         "REP-08", "Distribución de horas SEGMOV",
@@ -293,6 +307,74 @@ def _rep03(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
     )
 
 
+# --- REP-06 ---
+
+def _rep06(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
+    tecnicos = responsables.tecnicos_visibles(solicitud.conexion, solicitud.sesion)
+    if solicitud.filtros.tecnico_id is not None:
+        tecnicos = [t for t in tecnicos if t["id"] == solicitud.filtros.tecnico_id]
+    fin = min(ahora, solicitud.periodo.fin - timedelta(seconds=1))
+    hojas = []
+    for tecnico in tecnicos:
+        tabla = met.historico_semanal(solicitud.conexion, solicitud.sesion, tecnico["id"], ahora=fin)
+        series_graf = tabla.set_index("Semana")[["Atendidos", "% documentación"]].astype(float)
+        hojas.append(Hoja(
+            tecnico["nombre_mostrar"],
+            [Tabla(f"{tecnico['nombre_mostrar']} · turno {tecnico['turno'] or 'sin asignar'}", tabla)],
+            [graficos.a_png(graficos.lineas(series_graf, f"Semana a semana · {tecnico['nombre_mostrar']}"))],
+        ))
+    if not hojas:
+        hojas.append(Hoja("Histórico", [Tabla("Histórico semanal", pd.DataFrame(columns=list(met.COLUMNAS_HISTORICO)))]))
+    hojas[-1].notas += [
+        "Cada técnico se compara primero consigo mismo: ↑ sube, ↓ baja, → igual frente a la semana "
+        "anterior y al promedio de las 4 semanas previas.",
+        "La carga varía por turno: no compare semanas de técnicos de turnos distintos.",
+        "Tiempos aproximados (≈). " + est.AVISO_SIN_ESPERA + ".",
+    ]
+    return Reporte("REP-06 Calidad de soporte – histórico", _encabezado(solicitud, ahora), hojas)
+
+
+# --- REP-07 ---
+
+def tabla_ranking(resultado: met.Ranking) -> pd.DataFrame:
+    return pd.DataFrame([{
+        "Posición": posicion, "Técnico": f.nombre, "Turno": f.turno or "—", "Atendidos": f.atendidos,
+        "Calidad": f.calidad, "Velocidad": f.velocidad, "Completitud": f.completitud, "Índice": f.indice,
+        "Evaluaciones": f.evaluaciones,
+    } for posicion, f in enumerate(resultado.filas, start=1)] + [{
+        "Técnico": "Promedio del equipo", "Calidad": resultado.promedio.get("calidad"),
+        "Velocidad": resultado.promedio.get("velocidad"), "Completitud": resultado.promedio.get("completitud"),
+        "Índice": resultado.promedio.get("indice"),
+    }], columns=["Posición", "Técnico", "Turno", "Atendidos", "Calidad", "Velocidad", "Completitud", "Índice",
+                 "Evaluaciones"])
+
+
+def _rep07(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
+    conexion, sesion, periodo = solicitud.conexion, solicitud.sesion, solicitud.periodo
+    resultado = met.ranking(conexion, sesion, periodo, ahora)
+    dimensiones = ["Calidad", "Velocidad", "Completitud"]
+    promedio = [resultado.promedio.get(d) for d in ("calidad", "velocidad", "completitud")]
+    radares = [graficos.a_png(graficos.radar(
+        dimensiones, {f.nombre: [f.calidad, f.velocidad, f.completitud], "Promedio del equipo": promedio},
+        f"{f.nombre} frente al equipo (0–100)")) for f in resultado.filas]
+    tendencia = met.tendencia_ranking(conexion, sesion, periodo).reset_index().rename(columns={"index": "Técnico"})
+    excluidos = pd.DataFrame(resultado.excluidos, columns=["Técnico", "Motivo"])
+    incumplimiento = met.incumplimiento_por_criterio(conexion, sesion, periodo)
+    notas = [
+        resultado.aviso,
+        "Ninguna métrica se usa sola: el índice combina calidad, velocidad (normalizada por categoría) y "
+        "completitud según los pesos configurados.",
+        "Se excluye a quien no alcanza la muestra mínima o está marcado «no incluir en ranking».",
+    ]
+    return Reporte("REP-07 Calidad de soporte – comparativo", _encabezado(solicitud, ahora), [
+        Hoja("Ranking", [Tabla("Ranking del período", tabla_ranking(resultado)),
+                         Tabla("Tendencia del índice (3 meses)", tendencia),
+                         Tabla("Excluidos del ranking", excluidos)], radares, notas),
+        Hoja("Incumplimiento", [Tabla("Incumplimiento por criterio (CAL-08)", incumplimiento)], [],
+             ["⚠ marca los criterios con incumplimiento del equipo igual o superior al umbral: tema de capacitación."]),
+    ])
+
+
 # --- REP-02 ---
 
 def _rep02(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
@@ -470,8 +552,11 @@ def _rep11(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
         "SELECT t.*, k.nombre_mostrar AS tecnico, e.nombre AS estacion, e.cliente, cl.categoria_codigo, "
         "cl.causa_codigo, cl.tipo_solucion_codigo, "
         "(SELECT COUNT(*) FROM ticket_evento v WHERE v.ticket_id = t.id_glpi AND v.tipo = 'ESCALAMIENTO') AS escalamientos, "
-        "(SELECT COUNT(*) FROM ticket_evento v WHERE v.ticket_id = t.id_glpi AND v.tipo = 'REAPERTURA') AS reaperturas "
+        "(SELECT COUNT(*) FROM ticket_evento v WHERE v.ticket_id = t.id_glpi AND v.tipo = 'REAPERTURA') AS reaperturas, "
+        "ev.porcentaje AS eval_porcentaje, ev.resultado AS eval_resultado, ev.criticos_fallidos AS eval_criticos, "
+        "ev.fecha AS eval_fecha, ev.version AS eval_version, ev.retroalimentacion AS eval_retro "
         "FROM ticket t LEFT JOIN tecnico k ON k.id = t.tecnico_principal_id "
+        "LEFT JOIN evaluacion ev ON ev.ticket_id = t.id_glpi AND ev.vigente = 1 "
         "LEFT JOIN ticket_clasificacion cl ON cl.ticket_id = t.id_glpi LEFT JOIN estacion e ON e.id = cl.estacion_id "
         "WHERE t.fecha_apertura >= ? AND t.fecha_apertura < ?" + condicion + " ORDER BY t.id_glpi",
         [p.inicio.isoformat(sep=" "), p.fin.isoformat(sep=" "), *valores],
@@ -492,16 +577,20 @@ def _rep11(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
             "Reaperturas": f["reaperturas"], "Estación": f["estacion"], "Cliente": f["cliente"],
             "Categoría": f["categoria_codigo"], "Causa": f["causa_codigo"],
             "Tipo de solución": f["tipo_solucion_codigo"], "Estado SLA": sla.NOMBRES[estado_sla],
+            "Evaluación %": f["eval_porcentaje"],
+            "Resultado evaluación": NOMBRE_RESULTADO.get(f["eval_resultado"], "") if f["eval_resultado"] else "",
+            "Críticos fallidos": f["eval_criticos"], "Fecha evaluación": (f["eval_fecha"] or "")[:16],
+            "Versión evaluación": f["eval_version"], "Retroalimentación": f["eval_retro"],
             "Entidad (GLPI)": f["entidad"], "Ubicación (GLPI)": f["ubicacion"],
         })
     datos = pd.DataFrame(registros)
     notas = ["Fechas de solución y cierre aproximadas (detectadas entre importaciones). "
-             "Las evaluaciones de calidad se agregan en la Fase 3."]
+             "La evaluación de calidad es la versión vigente de cada ticket (vacía si no se evaluó)."]
     return Reporte("REP-11 Datos para auditoría", _encabezado(solicitud, ahora),
                    [Hoja("Auditoría", [Tabla("Tickets del período", datos)], [], notas)])
 
 
 CONSTRUCTORES = {
     "REP-01": _rep01, "REP-02": _rep02, "REP-03": _rep03, "REP-04": _rep04,
-    "REP-05": _rep05, "REP-08": _rep08, "REP-09": _rep09, "REP-11": _rep11,
+    "REP-05": _rep05, "REP-06": _rep06, "REP-07": _rep07, "REP-08": _rep08, "REP-09": _rep09, "REP-11": _rep11,
 }

@@ -23,7 +23,7 @@ def tecnico_id(bd, nombre):
     return bd.execute("SELECT id FROM tecnico WHERE nombre_glpi = ?", (nombre,)).fetchone()[0]
 
 
-def evaluar_todo(bd, sesion, ticket_id, valor=cal.CUMPLE, ahora=None, fallar=()):
+def evaluar_todo(bd, sesion, ticket_id, valor=cal.CUMPLE, ahora=None, fallar=(), retroalimentacion=""):
     tipo = cal.tipo_caso_sugerido(bd, ticket_id)
     automaticos = cal.precalificar(bd, ticket_id, tipo, ahora)
     resultados = {}
@@ -31,7 +31,7 @@ def evaluar_todo(bd, sesion, ticket_id, valor=cal.CUMPLE, ahora=None, fallar=())
         deseado = cal.NO_CUMPLE if c["id"] in fallar else valor
         nota = "ajuste de prueba" if c["id"] in automaticos and automaticos[c["id"]].resultado != deseado else None
         resultados[c["id"]] = (deseado, nota)
-    return cal.guardar_evaluacion(bd, sesion, ticket_id, tipo, resultados, ahora=ahora)
+    return cal.guardar_evaluacion(bd, sesion, ticket_id, tipo, resultados, retroalimentacion, ahora=ahora)
 
 
 # --- CAL-04 (CA-19) ---
@@ -189,3 +189,91 @@ def test_incumplimiento_por_criterio(equipo_evaluado, coordinador):
     assert tabla.loc["G-02", "Crítico"] == "CRÍTICO"
     assert tabla.loc["G-02", "Capacitación"] == ""
     assert tabla.loc["G-02", "Tecnico 02 %"] == 100.0 and tabla.loc["G-02", "Tecnico 01 %"] == 0.0
+
+
+# --- REP-06, REP-07, REP-10 (calidad) y resúmenes semanales ---
+
+def solicitud(bd, sesion, carpeta, periodo, **extra):
+    from core.reportes import catalogo
+    return catalogo.SolicitudReporte(conexion=bd, sesion=sesion, periodo=periodo, carpeta_exportaciones=carpeta,
+                                     ahora=d(9, 30), **extra)
+
+
+def test_rep06_historico_por_tecnico(equipo_evaluado, coordinador, consulta, tmp_path):
+    from openpyxl import load_workbook
+    from pypdf import PdfReader
+    from core.analisis.filtros import Filtros
+    from core.reportes import catalogo
+    septiembre = periodos.mes(2026, 9)
+    excel = catalogo.generar(solicitud(equipo_evaluado, coordinador, tmp_path, septiembre), "REP-06", catalogo.EXCEL)
+    assert {"Tecnico 01", "Tecnico 02", "Tecnico 03"} <= set(load_workbook(excel).sheetnames)
+    uno = catalogo.generar(solicitud(equipo_evaluado, coordinador, tmp_path, septiembre,
+                                     filtros=Filtros(tecnico_id=tecnico_id(equipo_evaluado, "Tecnico 01"))),
+                           "REP-06", catalogo.PDF)
+    texto = "\n".join(pag.extract_text() for pag in PdfReader(uno).pages)
+    assert "REP-06 Calidad de soporte" in texto and "Tecnico 01" in texto and "Tecnico 02" not in texto
+    with pytest.raises(ErrorPermiso):
+        catalogo.generar(solicitud(equipo_evaluado, consulta, tmp_path, septiembre), "REP-06", catalogo.PDF)
+
+
+def test_rep07_comparativo_solo_coordinador(equipo_evaluado, coordinador, consulta, tmp_path):
+    from openpyxl import load_workbook
+    from pypdf import PdfReader
+    from core.reportes import catalogo
+    septiembre = periodos.mes(2026, 9)
+    excel = catalogo.generar(solicitud(equipo_evaluado, coordinador, tmp_path, septiembre), "REP-07", catalogo.EXCEL)
+    libro = load_workbook(excel)
+    assert libro.sheetnames == ["Ranking", "Incumplimiento"]
+    valores = [c for fila in libro["Ranking"].iter_rows(values_only=True) for c in fila if c is not None]
+    assert "Promedio del equipo" in valores and "Tecnico 03" in valores  # excluido, con su motivo
+    pdf = catalogo.generar(solicitud(equipo_evaluado, coordinador, tmp_path, septiembre), "REP-07", catalogo.PDF)
+    texto = " ".join(pag.extract_text().replace("\n", " ") for pag in PdfReader(pdf).pages)
+    assert met.AVISO_RANKING in texto
+    assert "REP-07" not in {r.codigo for r in catalogo.disponibles(consulta)}
+    with pytest.raises(ErrorPermiso):
+        catalogo.generar(solicitud(equipo_evaluado, consulta, tmp_path, septiembre), "REP-07", catalogo.PDF)
+
+
+def test_rep10_incluye_la_calidad_del_area(equipo_evaluado, coordinador, tmp_path):
+    from openpyxl import load_workbook
+    from core.reportes import paquete
+    resultado = paquete.generar(equipo_evaluado, coordinador, periodos.mes(2026, 9), tmp_path, ahora=d(10, 1))
+    hoja = load_workbook(resultado.excel)["Calidad del área"]
+    valores = [c for fila in hoja.iter_rows(values_only=True) for c in fila if c is not None]
+    assert "Evaluaciones de calidad del mes" in valores and "Criterios con más incumplimiento" in valores
+    assert any(isinstance(v, str) and v.startswith("KPI-14") for v in valores)
+    assert any(isinstance(v, str) and v.startswith("KPI-15") for v in valores)
+    assert cal.NOMBRE_RESULTADO[cal.CONFORME] in valores
+    assert not any(isinstance(v, str) and v.startswith("Tecnico") for v in valores)  # sin datos por técnico
+
+
+def test_resumen_semanal_solo_con_datos_propios(equipo_evaluado, coordinador, consulta, tmp_path):
+    from email import policy
+    from email.parser import BytesParser
+    from core.reportes import paquete
+    evaluar_todo(equipo_evaluado, coordinador, 201, ahora=d(9, 10), retroalimentacion="Documentar la causa raíz.")
+    semana = periodos.semana(2026, 37)  # 7 al 13 de septiembre: solo hay evaluaciones
+    assert paquete.semana_resumen(d(9, 16)) == semana
+    rutas = paquete.resumenes_semanales(equipo_evaluado, coordinador, tmp_path, ahora=d(9, 16))
+    assert sorted(r.name for r in rutas) == ["resumen_Tecnico_01.eml", "resumen_Tecnico_02.eml"]
+    mensaje = BytesParser(policy=policy.default).parsebytes(
+        next(r for r in rutas if r.name == "resumen_Tecnico_02.eml").read_bytes())
+    assert mensaje["X-Unsent"] == "1" and not mensaje["To"]
+    cuerpo = mensaje.get_body(preferencelist=("plain",)).get_content()
+    assert "Hola, Tecnico 02" in cuerpo and "Ticket 200" in cuerpo and "Ticket 201" in cuerpo
+    assert "Documentar la causa raíz." in cuerpo
+    assert "Tecnico 01" not in cuerpo and "ranking" not in cuerpo.lower() and "Índice" not in cuerpo
+    semana36 = paquete.resumenes_semanales(equipo_evaluado, coordinador, tmp_path, periodos.semana(2026, 36), d(9, 16))
+    assert len(semana36) == 3  # los tres técnicos atendieron tickets
+    with pytest.raises(ErrorPermiso):
+        paquete.resumenes_semanales(equipo_evaluado, consulta, tmp_path, ahora=d(9, 16))
+
+
+def test_rep11_trae_la_evaluacion_vigente(equipo_evaluado, coordinador, tmp_path):
+    import pandas as pd
+    from core.reportes import catalogo
+    ruta = catalogo.generar(solicitud(equipo_evaluado, coordinador, tmp_path, periodos.mes(2026, 9)), "REP-11", catalogo.CSV)
+    tabla = pd.read_csv(ruta, sep=";", encoding="utf-8-sig").set_index("ID")
+    assert tabla.loc[100, "Evaluación %"] == 100.0
+    assert tabla.loc[200, "Críticos fallidos"] == 1
+    assert pd.isna(tabla.loc[300, "Evaluación %"])

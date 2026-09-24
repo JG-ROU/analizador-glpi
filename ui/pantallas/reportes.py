@@ -86,8 +86,14 @@ class PantallaReportes(QWidget):
         correo_boton = QPushButton("Borrador de correo: hallazgos ALTA")
         correo_boton.setObjectName("secundario")
         correo_boton.clicked.connect(self.borrador_hallazgos)
+        resumenes_boton = QPushButton("Resúmenes semanales por técnico")
+        resumenes_boton.setObjectName("secundario")
+        resumenes_boton.setToolTip("Un borrador de correo por técnico con sus propias métricas y la "
+                                   "retroalimentación de la última semana completa (nunca el ranking).")
+        resumenes_boton.clicked.connect(self.resumenes_semanales)
         diseno_mensual.addWidget(paquete_boton)
         diseno_mensual.addWidget(correo_boton)
+        diseno_mensual.addWidget(resumenes_boton)
         diseno_mensual.addStretch()
         mensual.setVisible(estado.sesion.es_coordinador)
         derecha = QVBoxLayout()
@@ -187,6 +193,19 @@ class PantallaReportes(QWidget):
             return
         self.resultado.setText(f"Borrador de correo guardado en:\n{ruta}")
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(ruta)))
+
+    def resumenes_semanales(self) -> None:
+        estado = self.estado
+        semana = paquete.semana_resumen(reloj.ahora())
+        self.resultado.setText(f"Generando los resúmenes de la semana {semana.etiqueta}…")
+        ejecutar(self, con_conexion(estado, lambda conexion, avance: paquete.resumenes_semanales(
+            conexion, estado.sesion, estado.config.rutas.exportaciones, semana)), self._resumenes_generados, self._fallo)
+
+    def _resumenes_generados(self, rutas: list[Path]) -> None:
+        carpeta = rutas[0].parent
+        self.resultado.setText(f"{len(rutas)} borradores de resumen semanal guardados en:\n{carpeta}\n"
+                               "Complete el destinatario de cada uno en Outlook antes de enviar.")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(carpeta)))
 
     def _abrir_carpeta(self) -> None:
         carpeta = self.estado.config.rutas.exportaciones
