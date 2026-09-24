@@ -34,10 +34,15 @@ La exportación de GLPI trae solo 10 columnas (ver `03`, IMP-00). Estas decision
 - **Tipificación (PAN-08, REP-04, HAL-03, KPI-09, KPI-10):** usan la categoría asignada a mano. KPI-09 y KPI-10 vuelven a la especificación con esa base. **HAL-09** avisa de los tickets resueltos sin clasificar.
 - **SEGMOV (REP-08) y Estaciones (PAN-06, REP-02, HAL-02):** usan la estación asignada.
 - **KPI-13** pasa a la Fase 3, porque necesita la importación de seguimientos.
-- **Fase 3 (pendiente de redefinir):**
-  - G-02 y G-07 no pueden precalificarse automáticamente;
-  - CAL-06 compara la velocidad dentro de la misma **prioridad**, porque no hay categoría;
-  - CA-22 se ajusta en consecuencia.
+**Decisiones al iniciar la Fase 3 (2026-09-24), tomadas por la IA con el visto bueno del coordinador para avanzar; revisables:**
+- **G-02 y G-07 sí se precalifican**, con la clasificación manual (IMP-07):
+  - G-02: estación y categoría asignadas (todas las del catálogo son hojas). La aplicación no se exporta, así que no se evalúa.
+  - G-07: tipo de solución y causa asignados, o una nota de solución que empieza con `CAUSA: CAU-xx`.
+- **CAL-06** compara la velocidad dentro de la misma **categoría asignada**. Los tickets sin categoría se comparan dentro de su prioridad.
+- **E-02** (adjuntos) queda manual: la exportación no trae documentos. **E-03** se precalifica con el evento de escalamiento, porque no hay columna de grupo.
+- **KPI-15** usa la fórmula de la spec 05 (60 % calidad + 40 % operativo), con los pesos en parámetros. **Falta confirmar con el coordinador** que coincide con la hoja KPI_SOPORTE.
+- **CSV de seguimientos:** se importa con mapeo de columnas y perfil, igual que el de tickets. Los campos son los de `03`: ticket, fecha, autor, tipo, privado, contenido, categoría de tarea y duración. **Falta validar con una exportación real.**
+- **El tipo de caso corregido en la evaluación** actualiza el tipo de caso del ticket (origen MANUAL) y se respeta al reimportar.
 
 ## Fase 1 – Importación, base y dashboard
 **Incluye:**

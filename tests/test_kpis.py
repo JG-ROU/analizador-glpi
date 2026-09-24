@@ -214,7 +214,7 @@ def test_kpis_visibles_y_criticidad_global(calc, datos):
     resultados = calc.calcular_visibles(SEPTIEMBRE)
     assert [r.codigo for r in resultados] == [
         "KPI-01", "KPI-02", "KPI-03", "KPI-04", "KPI-05", "KPI-06", "KPI-07", "KPI-08",
-        "KPI-09", "KPI-10", "KPI-11", "KPI-12", "KPI-16",
+        "KPI-09", "KPI-10", "KPI-11", "KPI-12", "KPI-13", "KPI-14", "KPI-15", "KPI-16",
     ]
     # Críticos: KPI-04 verde, KPI-05 rojo, KPI-07 rojo, KPI-08 rojo
     assert criticidad_global(resultados) == semaforo.ROJO

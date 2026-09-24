@@ -220,7 +220,7 @@ def test_ca07_dashboard_en_menos_de_2_segundos(qtbot, contexto, coordinador, tmp
     qtbot.waitUntil(lambda: "calculado en" in pantalla.tiempo.text(), timeout=20000)
     duracion = time.perf_counter() - inicio
     assert duracion < 2.0, f"El dashboard tardó {duracion:.2f} s"
-    assert pantalla.tarjetas.count() == 14
+    assert pantalla.tarjetas.count() == 17
 
 
 def test_ca15_importacion_grande_no_congela_la_interfaz(qtbot, contexto, coordinador, tmp_path, sin_mensajes_modales):

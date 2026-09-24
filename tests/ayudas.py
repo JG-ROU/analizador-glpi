@@ -51,6 +51,19 @@ def importar_diario(bd, sesion, tickets, desde: datetime, hasta: datetime, carpe
         corte += timedelta(days=1)
 
 
+def importar_seguimientos(bd, sesion, tickets, corte: datetime, carpeta: Path, filas=None):
+    """Genera e importa el CSV de seguimientos de los tickets hasta el corte."""
+    from core.importacion import seguimientos as seg
+
+    filas = filas if filas is not None else gen.filas_seguimientos(tickets, corte)
+    ruta = gen.escribir_csv_seguimientos(filas, carpeta / "csv" / f"seguimientos_{corte:%Y%m%d_%H%M}.csv")
+    fuente = FuenteCSV(ruta)
+    perfil = seg.proponer_perfil(fuente.formato)
+    return seg.importar(bd, sesion, archivo=ruta.name, hash_archivo=fuente.hash, perfil=perfil,
+                        validacion=seg.validar(bd, fuente.obtener_tickets(), perfil),
+                        carpeta_respaldos=carpeta / "respaldos", retencion_respaldos=30)
+
+
 def ticket(id_glpi, apertura, tecnico, prioridad, *cambios, estado_inicial=gen.ASIGNADO):
     """Ticket ficticio: `cambios` son pares (fecha, estado)."""
     return gen.TicketFicticio(

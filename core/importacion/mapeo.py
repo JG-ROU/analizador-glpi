@@ -267,7 +267,10 @@ def guardar_perfil(
 
 
 def listar_perfiles(conexion: sqlite3.Connection) -> list[PerfilImportacion]:
-    filas = conexion.execute("SELECT * FROM perfil_importacion ORDER BY nombre").fetchall()
+    """Perfiles del CSV de tickets (los de seguimientos se manejan en su módulo)."""
+    filas = conexion.execute(
+        "SELECT * FROM perfil_importacion WHERE nombre NOT LIKE 'Seguimientos: %' ORDER BY nombre"
+    ).fetchall()
     return [_desde_fila(f) for f in filas]
 
 
@@ -289,6 +292,8 @@ def buscar_perfil_compatible(
         "GROUP BY p.id ORDER BY MAX(COALESCE(i.fecha, '')) DESC, p.actualizado_en DESC"
     ).fetchall()
     for fila in filas:
+        if fila["nombre"].startswith("Seguimientos: "):
+            continue  # perfiles del CSV de seguimientos (core/importacion/seguimientos.py)
         perfil = _desde_fila(fila)
         if all(e in encabezados for e in perfil.mapeo.columnas.values() if e):
             return perfil

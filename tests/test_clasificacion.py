@@ -57,7 +57,7 @@ def test_migracion_002_sobre_bd_de_fase_1_con_datos(tmp_path):
     migrador.migrar(conexion, tmp_path / "respaldos", solo_001)
     with conexion:
         conexion.execute("INSERT INTO festivo (fecha, descripcion) VALUES ('2026-12-25', 'Navidad')")
-    assert migrador.migrar(conexion, tmp_path / "respaldos") == 2
+    assert migrador.migrar(conexion, tmp_path / "respaldos") == migrador.descubrir()[-1].version
     semilla.sembrar(conexion)
     assert conexion.execute("SELECT COUNT(*) FROM festivo").fetchone()[0] == 1
     assert list((tmp_path / "respaldos").glob("analizador_antes_migracion_v1_*.db"))

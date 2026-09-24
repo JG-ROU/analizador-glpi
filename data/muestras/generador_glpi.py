@@ -334,7 +334,121 @@ def generar_exportaciones(
             filas = inyectar_errores(filas, errores)
         nombre = f"glpi_tickets_{corte:%Y%m%d_%H%M}.csv"
         rutas.append(escribir_csv(filas, carpeta / nombre, codificacion, separador_miles))
+    # Seguimientos y tareas hasta el último corte (Fase 3)
+    ultimo = fechas[-1]
+    rutas.append(escribir_csv_seguimientos(filas_seguimientos(tickets, ultimo, semilla),
+                                           carpeta / f"glpi_seguimientos_{ultimo:%Y%m%d_%H%M}.csv", codificacion))
     return rutas
+
+
+# --- Seguimientos y tareas (Fase 3) ---
+
+ENCABEZADOS_SEGUIMIENTOS = (
+    "ID del ticket", "Fecha", "Autor", "Tipo", "Privado", "Contenido", "Categoría de tarea", "Duración",
+)
+_TIPO_TEXTO = {"SEGUIMIENTO": "Seguimiento", "TAREA": "Tarea", "SOLUCION": "Solución"}
+
+
+def _nota(fecha, autor, contenido, tipo="SEGUIMIENTO", categoria="", duracion="", privado=False) -> dict:
+    return {"fecha": fecha.replace(second=0, microsecond=0), "autor": autor, "tipo": tipo, "contenido": contenido,
+            "categoria": categoria, "duracion": duracion, "privado": privado}
+
+
+def seguimientos_de(ticket: TicketFicticio, semilla: int = 0) -> list[dict]:
+    """Notas coherentes con la historia del ticket, con defectos ocasionales para evaluar calidad."""
+    rng = random.Random(semilla * 1_000_003 + ticket.id_glpi)
+    cambios = sorted(ticket.cambios, key=lambda c: c.fecha)
+    prioridad = cambios[0].prioridad
+    tecnicos = next((c.tecnicos for c in cambios if c.tecnicos), ()) or ("Tecnico 01",)
+    autor = tecnicos[0]
+    es_p1 = prioridad == "Mayor"
+    intervalo = timedelta(minutes=55) if es_p1 else timedelta(hours=3.5) if prioridad in ("Urgente", "Muy urgente") \
+        else timedelta(hours=20)
+    hhmm = lambda f: f"{f:%H:%M}"  # noqa: E731
+    notas = []
+    t = ticket.apertura + timedelta(minutes=rng.randint(3, 15))
+    sintoma = "" if rng.random() < 0.1 else "Síntoma:     la aplicación muestra «Error de conexión»\n"
+    notas.append(_nota(t, autor, f"[APERTURA] {hhmm(t)}\nReporta:     operador por llamada\nEstación:    Estación 03 | "
+                                  f"Carril: 2\nAplicación:  Recaudo\n{sintoma}Desde:       {hhmm(ticket.apertura)} | "
+                                  f"Impacto: 1 carril\nPrioridad:   {prioridad} porque afecta el recaudo"))
+    if es_p1:
+        notas.append(_nota(t + timedelta(minutes=2), autor, f"[P1-INICIO] {hhmm(t)}\nDetección:  {hhmm(ticket.apertura)} "
+                                                             f"por monitoreo\nAfectación: carriles 1 a 4\nAviso:      coordinador {hhmm(t)}"))
+    diag = t + timedelta(minutes=rng.randint(15, 60))
+    sigue = "Sigue:     revisar logs – yo" if rng.random() < 0.15 else f"Sigue:     revisar logs – yo – antes de {hhmm(diag + timedelta(hours=1))}"
+    notas.append(_nota(diag, autor, f"[DIAG] {hhmm(diag)}\nHice:      1) reinicio del servicio 2) prueba de red\n"
+                                    f"Encontré:  el servicio no responde\nEstado:    Hipótesis: bloqueo de base de datos\n{sigue}",
+                       "TAREA", "" if rng.random() < 0.1 else "DIAG", "0" if rng.random() < 0.05 else str(rng.choice([15, 30, 45]))))
+    estado_actual, desde = None, t
+    for cambio in cambios:
+        if cambio.estado is None:
+            continue
+        # Notas periódicas mientras el ticket sigue en el estado anterior
+        paso = intervalo * (1.6 if rng.random() < 0.2 else 1)
+        marcador = desde + paso
+        while estado_actual not in ("Resueltas", "Cerrado", None) and marcador < cambio.fecha:
+            if estado_actual == ESCALADO:
+                notas.append(_nota(marcador, autor, f"[SEG-ESC] {marcador:%d/%m %H:%M}\nConsulté a: Desarrollo por Teams\n"
+                                                    f"Respuesta:  sin respuesta\nSigue:      nuevo seguimiento – yo – {marcador + intervalo:%d/%m %H:%M}"))
+            elif estado_actual == ESPERA:
+                notas.append(_nota(marcador, autor, f"[RECORDATORIO n.º 1/2] {marcador:%d/%m %H:%M}\nContacté a operador por "
+                                                    "llamada: sin respuesta"))
+            elif es_p1:
+                notas.append(_nota(marcador, autor, f"[P1-ACT] {hhmm(marcador)}\nEstado: sin cambios\nPróxima actualización: "
+                                                    f"{hhmm(marcador + intervalo)}"))
+            else:
+                notas.append(_nota(marcador, autor, f"[AVANCE] {hhmm(marcador)}\nHice:      validación de la transmisión\n"
+                                                    f"Estado:    sigue la falla\nSigue:     monitorear – yo – antes de {hhmm(marcador + intervalo)}"))
+            marcador += paso
+        f = cambio.fecha
+        if cambio.estado == ESCALADO:
+            solicita = "" if rng.random() < 0.15 else "\nSe solicita: corrección del servicio"
+            notas.append(_nota(f, autor, f"[ESC] {hhmm(f)}\nEscalado a:  Desarrollo | Contacto: equipo | Medio: GLPI | "
+                                         f"Ref.: #{ticket.id_glpi + 7}\nMotivo:      no se resuelve con el runbook\nPruebas:     "
+                                         f"reinicio y revisión de logs\nEvidencias:  capturas adjuntas{solicita}"))
+        elif estado_actual == ESCALADO:
+            notas.append(_nota(f, autor, f"[RETORNO] {hhmm(f)}\nEl área Desarrollo respondió: se corrigió la versión\n"
+                                         "Apliqué:    actualización\nVerificación: con el operador de la estación"))
+        if cambio.estado == ESPERA:
+            notas.append(_nota(f, autor, f"[ESPERA] {hhmm(f)}\nSe requiere de: operador\nQué:            confirmar horario\n"
+                                         f"Recordatorio:   {f + timedelta(hours=24):%d/%m %H:%M}"))
+        if cambio.estado == RESUELTO:
+            if es_p1:
+                notas.append(_nota(f - timedelta(minutes=5), autor, f"[P1-RESTABLECIDO] {hhmm(f)}\nServicio restablecido; "
+                                                                    "verificado con el operador"))
+            causa = "" if rng.random() < 0.15 else f"CAUSA: CAU-0{rng.randint(1, 7)} | detalle de la causa\n"
+            verificacion = "" if rng.random() < 0.1 else f"\nVerificación: con el operador de la estación a las {hhmm(f)}"
+            notas.append(_nota(f, autor, f"{causa}Se reinició el servicio y se validó la transmisión.{verificacion}", "SOLUCION"))
+        estado_actual, desde = cambio.estado, f
+    if rng.random() < 0.02:
+        notas.append(_nota(t + timedelta(minutes=30), autor, "Se entregó la clave: 12345 al operador", privado=True))
+    return sorted(notas, key=lambda n: n["fecha"])
+
+
+def filas_seguimientos(tickets: list[TicketFicticio], corte: datetime, semilla: int = 0) -> list[dict]:
+    filas = []
+    for ticket in tickets:
+        if ticket.apertura > corte:
+            continue
+        for nota in seguimientos_de(ticket, semilla):
+            if nota["fecha"] <= corte:
+                filas.append({"id_glpi": ticket.id_glpi, **nota})
+    return filas
+
+
+def texto_csv_seguimientos(filas: list[dict], separador_miles: str = " ") -> str:
+    lineas = [";".join(_campo(e) for e in ENCABEZADOS_SEGUIMIENTOS) + ";"]
+    for fila in filas:
+        valores = (formatear_id(fila["id_glpi"], separador_miles), fila["fecha"], fila["autor"], _TIPO_TEXTO[fila["tipo"]],
+                   "Sí" if fila["privado"] else "No", fila["contenido"], fila["categoria"], fila["duracion"])
+        lineas.append(";".join(_campo(v) for v in valores) + ";")
+    return "\n".join(lineas) + "\n"
+
+
+def escribir_csv_seguimientos(filas: list[dict], ruta: Path, codificacion: str = "utf-8") -> Path:
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    ruta.write_bytes(texto_csv_seguimientos(filas).encode(codificacion))
+    return ruta
 
 
 def _fecha(texto: str) -> datetime:

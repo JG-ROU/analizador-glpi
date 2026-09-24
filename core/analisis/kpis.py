@@ -11,6 +11,7 @@ usuario (KPI-00) llegan en la Fase 2.
 """
 
 import sqlite3
+import statistics
 from collections.abc import Callable, Mapping
 from functools import partial
 from dataclasses import dataclass, field, replace
@@ -128,6 +129,9 @@ class CalculadoraKPI:
             "KPI-10": self._kpi10_otros,
             "KPI-11": self._kpi11_reincidencia,
             "KPI-12": self._kpi12_reaperturas,
+            "KPI-13": self._kpi13_primera_respuesta,
+            "KPI-14": self._kpi14_calidad,
+            "KPI-15": self._kpi15_indice_general,
             "KPI-16": self._kpi16_sin_actualizar,
             "KPI-17": self._kpi17_tiempo_escalado,
         }
@@ -482,6 +486,58 @@ class CalculadoraKPI:
         resueltos = self.contar_eventos(ev.SOLUCION, periodo, filtros, distintos=True)
         return self._base("KPI-12", est.porcentaje(reaperturas, resueltos), numerador=reaperturas,
                           denominador=resueltos, cantidad=resueltos)
+
+    def _kpi13_primera_respuesta(self, periodo, filtros, corte) -> ResultadoKPI:
+        """Horas de la apertura al primer seguimiento o tarea (requiere el CSV de seguimientos)."""
+        condicion, valores = filtros.sql("t")
+        filas = self.conexion.execute(
+            "SELECT t.fecha_apertura, (SELECT MIN(s.fecha) FROM seguimiento s WHERE s.ticket_id = t.id_glpi "
+            "AND s.tipo IN ('SEGUIMIENTO', 'TAREA')) AS primera FROM ticket t "
+            "WHERE t.fecha_apertura >= ? AND t.fecha_apertura < ?" + condicion,
+            [_iso(periodo.inicio), _iso(periodo.fin), *valores],
+        ).fetchall()
+        horas = [
+            max(0.0, (datetime.fromisoformat(f["primera"]) - datetime.fromisoformat(f["fecha_apertura"])).total_seconds() / 3600)
+            for f in filas if f["primera"]
+        ]
+        resumen = est.resumir_tiempos(horas, self.muestra_minima)
+        notas = [] if horas else ["Importe el CSV de seguimientos para calcular la primera respuesta."]
+        return self._base("KPI-13", resumen.mediana, cantidad=resumen.cantidad, p90=resumen.p90, notas=notas)
+
+    def _kpi14_calidad(self, periodo, filtros, corte) -> ResultadoKPI:
+        """Promedio del % de las evaluaciones vigentes hechas en el período (CAL-03)."""
+        condicion, valores = filtros.sql("t")
+        fila = self.conexion.execute(
+            "SELECT AVG(v.porcentaje) AS promedio, COUNT(*) AS cantidad FROM evaluacion v "
+            "JOIN ticket t ON t.id_glpi = v.ticket_id WHERE v.vigente = 1 AND v.porcentaje IS NOT NULL "
+            "AND v.fecha >= ? AND v.fecha < ?" + condicion,
+            [_iso(periodo.inicio), _iso(periodo.fin), *valores],
+        ).fetchone()
+        valor = None if fila["promedio"] is None else round(fila["promedio"], est.DECIMALES)
+        notas = [] if fila["cantidad"] else ["Sin evaluaciones de calidad en el período."]
+        return self._base("KPI-14", valor, cantidad=fila["cantidad"], notas=notas)
+
+    def _kpi15_indice_general(self, periodo, filtros, corte) -> ResultadoKPI:
+        """Peso de calidad × KPI-14 + resto × operativo (promedio de KPI-04 con tope 100, KPI-07
+        y 100 − KPI-08). Si falta algún componente operativo se promedian los disponibles."""
+        peso_calidad = (parametros.decimal_opcional(self.conexion, "kpi15_peso_calidad") or 60) / 100
+        calidad = self._kpi14_calidad(periodo, filtros, corte).valor
+        gestionados = self._kpi04_gestionados(periodo, filtros, corte).valor
+        sla_valor = self._kpi07_sla(periodo, filtros, corte).valor
+        sin_cerrar = self._kpi08_resueltos_sin_cerrar(periodo, filtros, corte).valor
+        operativos = [v for v in (
+            None if gestionados is None else min(gestionados, 100.0),
+            sla_valor,
+            None if sin_cerrar is None else 100 - sin_cerrar,
+        ) if v is not None]
+        notas = ["Componentes por confirmar con la hoja KPI_SOPORTE del libro de control."]
+        if calidad is None or not operativos:
+            notas.insert(0, "Faltan evaluaciones de calidad o datos operativos para calcular el índice.")
+            return self._base("KPI-15", None, notas=notas)
+        operativo = statistics.fmean(operativos)
+        valor = round(peso_calidad * calidad + (1 - peso_calidad) * operativo, est.DECIMALES)
+        detalle = [{"calidad": calidad, "operativo": round(operativo, est.DECIMALES), "peso_calidad": peso_calidad}]
+        return self._base("KPI-15", valor, cantidad=len(operativos), detalle=detalle, notas=notas)
 
     def _kpi16_sin_actualizar(self, periodo, filtros, corte) -> ResultadoKPI:
         abiertos = self._abiertos_al_corte(filtros, corte)

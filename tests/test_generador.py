@@ -147,9 +147,9 @@ def test_exportaciones_sucesivas_crecen_y_cambian(tmp_path):
     rutas = gen.generar_exportaciones(tmp_path, 300, DESDE, HASTA, cortes=3)
     assert [r.name for r in rutas] == [
         "glpi_tickets_20260921_0700.csv", "glpi_tickets_20260922_0700.csv",
-        "glpi_tickets_20260923_0700.csv",
+        "glpi_tickets_20260923_0700.csv", "glpi_seguimientos_20260923_0700.csv",
     ]
-    contenidos = [leer(r.read_text(encoding="utf-8"))[1:] for r in rutas]
+    contenidos = [leer(r.read_text(encoding="utf-8"))[1:] for r in rutas[:3]]
     ids = [{f[0] for f in filas} for filas in contenidos]
     assert ids[0] <= ids[1] <= ids[2]
     estados_1 = {f[0]: f[3] for f in contenidos[1]}
@@ -172,7 +172,7 @@ def test_errores_de_validacion_inyectados(tickets):
 
 
 def test_codificacion_latin1(tmp_path):
-    ruta = gen.generar_exportaciones(tmp_path, 20, DESDE, HASTA, codificacion="latin-1")[0]
+    ruta = gen.generar_exportaciones(tmp_path, 20, DESDE, HASTA, codificacion="cp1252")[0]
     assert "Título".encode("latin-1") in ruta.read_bytes()
 
 
@@ -181,5 +181,5 @@ def test_linea_de_comandos(tmp_path, capsys):
         "--tickets", "50", "--desde", "2026-08-01", "--hasta", "2026-09-23",
         "--cortes", "2", "--errores", "2", "--salida", str(tmp_path),
     ])
-    assert len(rutas) == 2 and all(r.exists() for r in rutas)
+    assert len(rutas) == 3 and all(r.exists() for r in rutas)
     assert str(rutas[-1]) in capsys.readouterr().out

@@ -100,6 +100,7 @@ def _parametros() -> list[ParametroInicial]:
             )
         )
     parametros += _parametros_fase2()
+    parametros += _parametros_fase3()
     for prioridad in PRIORIDADES:
         for color in ("verde", "amarillo"):
             parametros.append(
@@ -146,6 +147,42 @@ def _parametros_fase2() -> list[ParametroInicial]:
         ParametroInicial("sla_riesgo_porcentaje", "80", "DECIMAL", "SLA",
                          "Porcentaje del objetivo consumido a partir del cual un ticket abierto está EN RIESGO.",
                          minimo=1, maximo=100),
+    ]
+
+
+def _parametros_fase3() -> list[ParametroInicial]:
+    """Calidad de soporte (spec 07) e índice del área (KPI-15, spec 05)."""
+    return [
+        ParametroInicial("umbral_conforme", "90", "DECIMAL", "Calidad",
+                         "CAL-03: % mínimo para «Conforme» (y 0 críticos fallidos).", minimo=0, maximo=100),
+        ParametroInicial("umbral_por_mejorar", "70", "DECIMAL", "Calidad",
+                         "CAL-03: % mínimo para «Por mejorar» (y 0 críticos fallidos).", minimo=0, maximo=100),
+        ParametroInicial("tickets_auditoria_semana", "10", "ENTERO", "Calidad",
+                         "CAL-04: tickets sugeridos cada semana para evaluar.", minimo=1),
+        ParametroInicial("dias_escalado_muestra", "5", "ENTERO", "Calidad",
+                         "CAL-04: escalados con más de estos días abiertos entran siempre en la muestra.", minimo=1),
+        ParametroInicial("penalizacion_critico", "10", "DECIMAL", "Calidad",
+                         "CAL-07: puntos que resta cada criterio crítico fallido a la dimensión Calidad.", minimo=0),
+        ParametroInicial("peso_ranking_calidad", "50", "DECIMAL", "Calidad",
+                         "CAL-07: peso de la dimensión Calidad en el índice del técnico (%).", minimo=0, maximo=100),
+        ParametroInicial("peso_ranking_velocidad", "30", "DECIMAL", "Calidad",
+                         "CAL-07: peso de la dimensión Velocidad en el índice del técnico (%).", minimo=0, maximo=100),
+        ParametroInicial("peso_ranking_completitud", "20", "DECIMAL", "Calidad",
+                         "CAL-07: peso de la dimensión Completitud en el índice del técnico (%).", minimo=0, maximo=100),
+        ParametroInicial("alerta_criterio_porcentaje", "30", "DECIMAL", "Calidad",
+                         "CAL-08: % de incumplimiento de un criterio a partir del cual se destaca para capacitación.",
+                         minimo=0, maximo=100),
+        ParametroInicial("kpi15_peso_calidad", "60", "DECIMAL", "Calidad",
+                         "KPI-15: peso de la calidad (KPI-14) en el índice general del área (%). Confirmar con la "
+                         "hoja KPI_SOPORTE.", minimo=0, maximo=100),
+        ParametroInicial("umbral_p1_minutos", "60", "DECIMAL", "Calidad",
+                         "G-05 y P-02: minutos máximos entre notas de un P1.", minimo=1),
+        ParametroInicial("umbral_nota_alta_horas", "4", "DECIMAL", "Calidad",
+                         "G-05 y E-05: horas máximas entre notas de prioridad alta (Urgente o superior).", minimo=1),
+        ParametroInicial("umbral_nota_normal_horas", "24", "DECIMAL", "Calidad",
+                         "G-05 y E-05: horas máximas entre notas de prioridad media o baja.", minimo=1),
+        ParametroInicial("umbral_recordatorio_horas", "26", "DECIMAL", "Calidad",
+                         "W-02: horas máximas entre [ESPERA] y cada [RECORDATORIO].", minimo=1),
     ]
 
 
@@ -219,6 +256,23 @@ KPIS_PREDEFINIDOS = (
         "PORCENTAJE", "%", "MENOR_MEJOR", umbral_verde=5,
     ),
     KpiInicial(
+        "KPI-13", "Tiempo de primera respuesta",
+        "Mediana de horas entre la apertura y el primer seguimiento o tarea, de los tickets recibidos en el "
+        "período que tienen seguimientos importados.",
+        "MEDIANA_TIEMPO", "horas", "MENOR_MEJOR",
+    ),
+    KpiInicial(
+        "KPI-14", "Calidad de documentación",
+        "Promedio del % de cumplimiento de las evaluaciones de calidad vigentes hechas en el período.",
+        "PORCENTAJE", "%", "MAYOR_MEJOR", umbral_verde=90, umbral_amarillo=70,
+    ),
+    KpiInicial(
+        "KPI-15", "Índice general del área",
+        "Calidad (KPI-14) y operativo (promedio de KPI-04 con tope 100, KPI-07 y 100 − KPI-08), ponderados "
+        "según los parámetros. Componentes por confirmar con la hoja KPI_SOPORTE.",
+        "PORCENTAJE", "puntos", "MAYOR_MEJOR", umbral_verde=85, umbral_amarillo=70,
+    ),
+    KpiInicial(
         "KPI-16", "Tickets sin actualizar",
         "Tickets abiertos sin actualización por más horas que el umbral de su "
         "prioridad / tickets abiertos × 100.",
@@ -266,6 +320,16 @@ def _sembrar_catalogos(conexion: sqlite3.Connection) -> None:
         "INSERT OR IGNORE INTO tipo_solucion (codigo, nombre, nota) VALUES (?, ?, ?)",
         [(f["codigo"], f["tipo_solucion"], f["nota"] or None) for f in _leer_catalogo("tipos_solucion.csv")],
     )
+    if "criterio_calidad" in tablas:
+        conexion.executemany(
+            "INSERT OR IGNORE INTO criterio_calidad (id, aplica_a, descripcion, como_verificar, critico, "
+            "automatizable, regla) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (f["id"], f["aplica_a"], f["criterio"], f["como_verificar"], int(f["critico"].strip() == "Sí"),
+                 f["automatizable"].strip(), f["regla_script"])
+                for f in _leer_catalogo("criterios_calidad.csv")
+            ],
+        )
 
 
 def sembrar(conexion: sqlite3.Connection) -> None:
