@@ -1,0 +1,11 @@
+codigo,causa,cuando_usar
+CAU-01,Configuración o parametrización incorrecta,Un parámetro o configuración estaba mal o desactualizado.
+CAU-02,"Datos (registro errado, incompleto o duplicado)",La información de origen estaba mal.
+CAU-03,Defecto de software,La aplicación tiene un error de programación (normalmente escalado a Desarrollo).
+CAU-04,Falla de hardware o componente,"Disco duro, memoria, mainboard, cables u otro componente/dispositivo. Detalle después de '|'."
+CAU-05,Red o equipo de comunicaciones,"Router, módem, enlace del proveedor, cableado de red."
+CAU-06,Base de datos,"Bloqueos, índices, mantenimiento pendiente, espacio."
+CAU-07,Operación / uso,Procedimiento no seguido o error de operación del usuario.
+CAU-08,Condición especial del vehículo,"Eje agrícola, eje remolque, eje grúa, eje adicional, vehículo exento, especial o de emergencia. Detalle después de '|'."
+CAU-09,Externa / tercero,Causa fuera del control del área (proveedor u otro factor externo).
+CAU-99,No determinada,No se identificó la causa. Revisar si se repite.

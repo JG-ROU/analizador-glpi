@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.black-formatter",
+    "qwtel.sqlite-viewer",
+    "mechatroner.rainbow-csv",
+    "yzhang.markdown-all-in-one",
+    "anthropic.claude-code"
+  ]
+}

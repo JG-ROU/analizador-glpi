@@ -1,0 +1,12 @@
+codigo,tipo_solucion,nota
+SOL-01,"Reinicio de aplicación, servicio o equipo",Consola > Reinicio
+SOL-02,Reinstalación o actualización de aplicativo,Consola > Reinstalación o actualización (cuando corrige un incidente)
+SOL-03,Ajuste de configuración o parámetros,
+SOL-04,Corrección o ajuste de datos,Incluye resincronización y ajustes manuales de conciliación
+SOL-05,"Mantenimiento de BD (índices, liberación de bloqueos)",Bases de Datos > Reconstrucción de índices (cuando corrige un incidente)
+SOL-06,Reparación o reemplazo de hardware,
+SOL-07,"Gestión de cuenta (creación, permisos, desbloqueo, contraseña)",
+SOL-08,"Orientación al usuario, sin cambio técnico",
+SOL-09,Resuelto por área escalada,El área se identifica en Grupo asignado
+SOL-10,Sin falla / no reproducible,
+SOL-11,Otra (describir),

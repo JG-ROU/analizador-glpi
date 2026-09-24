@@ -1,0 +1,35 @@
+id,aplica_a,criterio,como_verificar,critico,automatizable,regla_script
+G-01,Todos,"Apertura completa: estación, aplicación, síntoma textual, desde, impacto y prioridad justificada",Existe [APERTURA] (o descripción) con los 6 campos,No,Semi,"Etiqueta [APERTURA] + campos 'Estación:', 'Aplicación:', 'Síntoma:', 'Impacto:' no vacíos"
+G-02,Todos,"Tipificación en categoría hoja, ubicación (estación) y aplicación diligenciadas",Campos del ticket,Sí,Auto,itilcategories_id es hoja; locations_id ≠ 0; elemento/campo aplicación presente
+G-03,Todos,Las notas siguen la estructura Hice / Encontré / Estado / Sigue,Revisar seguimientos y tareas,No,Semi,% de notas con etiqueta y con 'Hice:' y 'Sigue:'
+G-04,Todos,"Cada nota (salvo cierre) termina con próximo paso, responsable y hora",'Sigue:' con hora hh:mm,No,Semi,"Regex 'Sigue:.*\d{1,2}:\d{2}'"
+G-05,Todos,"Frecuencia de actualización cumplida según tipo y prioridad (P1 60 min, alta 4 h, media/baja 24 h)",Diferencia entre notas consecutivas,Sí,Auto,Máximo intervalo entre seguimientos/tareas ≤ umbral; excluye tiempo En espera externa
+G-06,Todos,"Tareas con categoría (DIAG, EJEC, ESC…) y duración registrada",Pestaña de tareas,No,Auto,taskcategories_id ≠ 0 y actiontime > 0 en todas las tareas
+G-07,Todos,Solución con tipo de solución y primera línea 'CAUSA: CAU-xx | detalle',Campo solución,Sí,Auto,solutiontypes_id ≠ 0 y regex '^CAUSA:\s*CAU-\d{2}'
+G-08,Todos,La solución indica cómo y con quién se verificó,'Verificación:' en la solución,No,Semi,'Verificación:' presente y con más de 10 caracteres
+G-09,Todos,Traspaso [TURNO] cuando el caso abierto cruza de turno,Seguimiento privado antes del fin del turno,No,Auto,Si el ticket estuvo abierto al cambio de turno → existe [TURNO] en la hora previa (requiere malla de turnos)
+G-10,Todos,Cierre formal: pasa de Resuelto a Cerrado,Estado del ticket,Sí,Auto,status = Cerrado o resuelto hace menos de 1 turno
+G-11,Todos,Sin contraseñas ni datos sensibles en el ticket,Leer notas,Sí,Semi,Regex de alerta: 'contraseña|password|clave:|pwd' → revisión humana
+G-12,Todos,Redacción clara: otro técnico podría continuar el caso solo leyendo el ticket,Juicio del auditor,No,Manual,—
+GE-01,Gestión,Al menos un [DIAG] con pruebas realizadas y resultado,Seguimientos/tareas,No,Semi,Etiqueta [DIAG] o tarea DIAG con 'Hice:' y 'Encontré:'
+GE-02,Gestión,Solución confirmada con usuario/operador antes de resolver,'Verificación:' menciona a quién y hora,No,Semi,'Verificación:' contiene hora hh:mm
+E-01,Escalamiento,"[ESC] completo: área, contacto, motivo, pruebas, evidencias, impacto y qué se solicita",Seguimiento [ESC],Sí,Semi,"Etiqueta [ESC] + campos 'Motivo:', 'Pruebas:', 'Se solicita:' no vacíos"
+E-02,Escalamiento,Evidencias adjuntas al momento de escalar,Documentos del ticket,No,Auto,≥ 1 documento adjunto con fecha ≤ fecha del [ESC] + 1 h
+E-03,Escalamiento,Grupo del área asignado y estado En espera,Actores y estado,No,Auto,Group_Ticket con grupo de escalamiento; historial muestra estado En espera
+E-04,Escalamiento,"Referencia externa registrada (ticket, correo del área)",'Ref.:' en [ESC],No,Semi,'Ref.:' no vacío
+E-05,Escalamiento,[SEG-ESC] dentro de la frecuencia (24 h; alta 4 h),Fechas de [SEG-ESC],Sí,Auto,Intervalo máximo entre [ESC]/[SEG-ESC] ≤ umbral mientras está En espera
+E-06,Escalamiento,[RETORNO] con lo hecho por el área y verificación antes de resolver,Seguimiento [RETORNO],No,Semi,Existe [RETORNO] antes de la solución
+S-01,Solicitud,"[REQ] con datos completos y aprobación cuando aplica (accesos, conciliaciones)",Seguimiento [REQ],No,Semi,[REQ] con 'Aprobación:' no vacío
+S-02,Solicitud,[EJEC] con evidencia de la ejecución,Seguimiento/tarea [EJEC],No,Semi,[EJEC] con 'Evidencia:' no vacío
+P-01,Crítico P1,"[P1-INICIO] con hora de detección, afectación y avisos",Seguimiento [P1-INICIO],No,Semi,Etiqueta + 'Detección:' y 'Aviso:' no vacíos
+P-02,Crítico P1,[P1-ACT] cada 60 min o menos hasta restablecer,Fechas de [P1-ACT],Sí,Auto,Intervalo máximo entre notas P1 ≤ 60 min hasta [P1-RESTABLECIDO]
+P-03,Crítico P1,"[P1-CIERRE] con duración, impacto, causa y prevención",Seguimiento [P1-CIERRE],No,Semi,Etiqueta + 'Impacto:' y 'CAUSA:' presentes
+P-04,Crítico P1,Revisión posterior en ≤ 2 días hábiles (o Problema vinculado),Problema GLPI / acta,No,Semi,Problem_Ticket vinculado o fecha de revisión registrada
+W-01,En espera externa,"[ESPERA] indica qué se pidió, a quién, por qué canal y fecha de recordatorio",Seguimiento [ESPERA],No,Semi,Etiqueta + 'Qué:' y 'Recordatorio:'
+W-02,En espera externa,Recordatorios a las 24 h y 48 h,Fechas de [RECORDATORIO],No,Auto,Intervalos entre [ESPERA] y recordatorios ≤ 26 h
+W-03,En espera externa,Cierre sin respuesta avisado al usuario,[CIERRE-SIN-RESPUESTA],No,Semi,Etiqueta presente si se cerró sin respuesta
+C-01,Cambio/despliegue,"[CAMBIO-PLAN] con aprobación, versión anterior→nueva, alcance y reversión",Seguimiento [CAMBIO-PLAN],No,Semi,"Etiqueta + 'Aprobó:', 'Versión:', 'Reversión:'"
+C-02,Cambio/despliegue,Ejecutado dentro de ventana (lun–jue antes de 16:00) o con excepción aprobada,Hora del [CAMBIO-EJEC],Sí,Auto,Fecha/hora de ejecución vs ventana y festivos
+C-03,Cambio/despliegue,[CAMBIO-EJEC] con verificación posterior y estado,Seguimiento [CAMBIO-EJEC],No,Semi,Etiqueta + 'Verificación:'
+A-01,Actividad programada,[ACT] con resultado explícito (sin novedad / hallazgo),Seguimiento [ACT],No,Semi,'Resultado:' no vacío
+A-02,Actividad programada,Hallazgo con incidente nuevo referenciado,N.º de ticket en [ACT],No,Semi,Si 'hallazgo' → contiene '#\d+'

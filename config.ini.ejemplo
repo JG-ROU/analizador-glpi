@@ -1,0 +1,30 @@
+; Configuración de arranque del Analizador GLPI.
+; Va junto al ejecutable. Si falta, la aplicación la crea a partir de esta plantilla.
+; Guardar en UTF-8.
+
+[rutas]
+; Relativas a la carpeta del ejecutable, o absolutas
+base_datos = data/analizador.db
+respaldos = data/respaldos
+exportaciones = exportaciones
+logs = logs
+
+[importacion]
+separador_por_defecto = ;
+codificacion_por_defecto = utf-8-sig
+; Formato de fecha de la exportación de GLPI (%d día, %m mes, %Y año, %H hora, %M minuto)
+formato_fecha = %d-%m-%Y %H:%M
+tamano_bloque = 5000
+
+[turnos]
+; Franjas para el turno de apertura del ticket (HH:MM-HH:MM).
+; No pueden solaparse y deben cubrir las 24 horas.
+; «Día Intermedio» no es franja de apertura: se asigna a cada técnico en Configuración.
+Mañana = 06:00-14:00
+Tarde = 14:00-22:00
+Nocturno = 22:00-06:00
+
+[general]
+; DEBUG, INFO, WARNING o ERROR
+nivel_log = INFO
+retencion_respaldos = 30

@@ -1,0 +1,112 @@
+# 12 – Fases y criterios de aceptación
+
+Una fase a la vez. Al cerrar cada una entrega lo indicado en `LEEME_PRIMERO.md` §2.8 y espera aprobación.
+
+## Ajustes por la exportación real (2026-09-24)
+La exportación de GLPI trae solo 10 columnas (ver `03`, IMP-00). Estas decisiones, tomadas con el coordinador, **prevalecen sobre cualquier referencia anterior** en los documentos `01`, `02`, `06`, `07`, `08`, `09` y `10`:
+
+**Datos:**
+- **Sin columnas de categoría, tipo, grupo, solución ni fechas de solución y cierre.** Las fechas de solución y cierre se aproximan con eventos detectados entre importaciones (IMP-06).
+- **Escalado** = estado "Escalado" de GLPI. Los escalamientos se cuentan como eventos (RN-07).
+- **Entidad y Ubicación** son solo informativas: no hay cliente, estación ni equivalencias de estaciones.
+
+**Prioridades y turnos:**
+- **Prioridades:** Mayor > Muy urgente > Urgente > Mediana > Baja > Muy baja. P1 = Mayor, según el parámetro `prioridad_p1`.
+- **Objetivos de SLA:** uno por cada prioridad.
+- **Turno de apertura:** franjas sin solape (mañana, tarde y nocturno). Día Intermedio es solo un turno asignable al técnico.
+
+**Usuarios y avisos:**
+- **Todos los usuarios tienen PIN** con hash bcrypt.
+- **NOT-01:** el umbral de importación desactualizada es `dias_importacion_desactualizada`, con valor por defecto 1 día (se recomienda importar a diario).
+
+**Dashboard (PAN-03):**
+- "Top 10 estaciones" se reemplaza por **"Carga por técnico"** (abiertos por prioridad).
+- "Distribución por familia" se reemplaza por **"Distribución por prioridad y estado"**.
+
+**PAN-13 y asistente (PAN-01):**
+- Sin equivalencias de estaciones, grupos de escalamiento ni catálogos de tipificación, causas o tipos de solución.
+- El asistente pide: coordinador, franjas de turno, prioridad P1, objetivos de SLA por prioridad y umbrales de "sin actualizar".
+
+**Pendiente de redefinir al iniciar cada fase:**
+- **Fase 2:** KPI-11, PAN-06 Estaciones, PAN-08 Tipificaciones, HAL-01, HAL-02, HAL-03, HAL-09, REP-02, REP-04, REP-08 SEGMOV y CA-10 y CA-12.
+- **Fase 3:**
+  - G-02 y G-07 no pueden precalificarse automáticamente;
+  - CAL-06 compara la velocidad dentro de la misma **prioridad**, porque no hay categoría;
+  - CA-22 se ajusta en consecuencia.
+
+## Fase 1 – Importación, base y dashboard
+**Incluye:**
+- IMP-00 a IMP-06 (solo CSV de tickets).
+- KPI-01 a KPI-08, KPI-16 y KPI-17 (predefinidos, con umbrales editables).
+- RN-01 a RN-07.
+- PAN-01, 02, 03, 04, 05 (sin seguimientos), 07 (sin calidad), 13 y 14.
+- REP-01 y REP-03 en Excel y CSV.
+- RNF-01 a RNF-04, 07, 09 a 11, 13 y 15.
+- Generador de CSV ficticio con el formato de IMP-00, incluidas secuencias de archivos con cambios de estado.
+
+**Criterios de aceptación:**
+- **CA-01** El .exe corre en un PC con Windows limpio, sin internet.
+- **CA-02** Importo un CSV con el formato real de IMP-00:
+  - separador `;`, comillas y `;` al final de cada línea;
+  - ID con separador de miles;
+  - fechas `DD-MM-AAAA HH:MM`;
+  - varios técnicos en una celda.
+
+  La autodetección propone el mapeo de columnas, estados y prioridades; lo confirmo y lo guardo como perfil.
+- **CA-03** Las filas con error (fecha inválida, ID vacío o no numérico, estado sin mapear) se muestran con su motivo y no se cargan; el resto sí.
+- **CA-04** Reimportar el mismo archivo no duplica datos. Importar una versión posterior:
+  - registra en `ticket_cambio` los cambios de estado, técnico y prioridad;
+  - registra en `ticket_evento` los eventos ESCALAMIENTO, SOLUCION y REAPERTURA.
+
+  Importar después un archivo más antiguo no hace retroceder los datos.
+- **CA-05** `id_glpi`, `estado_codigo`, `prioridad_nivel`, `es_p1`, el técnico principal y los adicionales, `turno_apertura` y `horas_resolucion` se derivan bien en los casos de prueba de IMP-04.
+- **CA-06** KPI-04 y KPI-05 coinciden con un cálculo manual sobre una secuencia de archivos ficticios, en la que un mismo ticket escalado 2 veces cuenta 2 escalamientos. El semáforo de KPI-05 respeta 20 % / 35 %.
+- **CA-07** El dashboard carga en menos de 2 s con el CSV ficticio de volumen.
+- **CA-08** Un usuario de consulta, que entra con su PIN, no ve las métricas de otros técnicos. El filtro se aplica en `core/`.
+
+## Fase 2 – Análisis, hallazgos, SLA y reportes
+**Incluye:**
+- KPI-00 (editor de KPIs), KPI-11 a KPI-13.
+- PAN-06, 08, 09, 11 y 12.
+- HAL-01 a HAL-12.
+- SLA; REP-01 a REP-05, REP-08, REP-09 y REP-11 en PDF, Excel y CSV.
+- Snapshot y tendencias.
+- NOT-01 a NOT-03, NOT-05 y borradores .eml.
+- RNF-05, RNF-06 y RNF-14.
+
+**Criterios de aceptación:**
+- **CA-09** Creo el KPI "% tickets REC sin CAUSA" (porcentaje; numerador familia = REC y sin causa; denominador familia = REC), con umbrales, y aparece en el dashboard con su semáforo.
+- **CA-10** El caso de prueba de HAL-01 (4 × DAT-01 en la misma estación y semana) genera el hallazgo con los 4 tickets. Reimportar no lo duplica.
+- **CA-11** HAL-04 marca un ticket alta sin seguimiento hace 5 horas.
+- **CA-12** SEGMOV reparte 100 horas entre 3 estaciones con 5, 3 y 2 casos → 50, 30 y 20; con casos 1, 1, 1 → la suma es exactamente 100 (ajuste de residuo).
+- **CA-13** El PDF de REP-01 incluye filtros, fecha, usuario, gráficos y paginación.
+- **CA-14** Al abrir la aplicación en un mes nuevo aparece NOT-03, y "Generar paquete mensual" produce el PDF, el Excel y el borrador .eml con el adjunto.
+- **CA-15** Durante una importación grande la interfaz no se congela y muestra el progreso.
+
+## Fase 3 – Calidad de soporte
+**Incluye:**
+- CAL-01 a CAL-08, KPI-14 y KPI-15.
+- PAN-10 completo; REP-06, REP-07 y REP-10 completo.
+- NOT-04 y el resumen semanal .eml por técnico.
+- Importación del CSV de seguimientos.
+
+**Criterios de aceptación:**
+- **CA-16** Al evaluar un ticket de tipo Escalamiento se muestran solo los 12 criterios generales y los 6 de escalamiento, como checkboxes tri-estado, con los críticos marcados.
+- **CA-17** El caso de prueba de CAL-03 da 82 % "Por mejorar"; con un crítico fallido da "No conforme".
+- **CA-18** Con seguimientos importados, G-07 y E-05 se precalifican. Corregir uno exige nota y queda como AUTO_CORREGIDO en el historial.
+- **CA-19** La muestra semanal sugerida incluye todos los P1 y al menos un ticket por técnico en 2 semanas.
+- **CA-20** El histórico semana a semana muestra flechas ▲▼ y % de variación correctos.
+- **CA-21** El ranking excluye a los técnicos con menos de 10 tickets y solo lo ve el coordinador.
+- **CA-22** Un técnico con tickets de categorías lentas no queda penalizado en velocidad frente a otro con categorías rápidas: prueba con datos ficticios que verifica la normalización de CAL-06.
+
+## Fase 4 (futura) – API REST de GLPI
+Implementar `fuente_api.py` con la misma interfaz. No se desarrolla hasta que se apruebe.
+
+## Entregables por fase
+- Código completo.
+- `build.bat` y el .exe.
+- Pruebas y su resultado.
+- README.
+- MANUAL_USUARIO actualizado.
+- Requisitos y CA cubiertos.
+- Pendientes y riesgos.
