@@ -122,7 +122,7 @@ def test_menu_del_coordinador_y_todas_las_pantallas(qtbot, con_datos, coordinado
     qtbot.addWidget(ventana)
     titulos = [ventana.menu.item(i).text() for i in range(ventana.menu.count())]
     assert titulos == ["Dashboard", "Importar", "Clasificación", "Novedades", "Hallazgos", "Estaciones",
-                       "Tipificaciones", "Responsables", "Reportes", "KPIs", "Configuración", "Historial"]
+                       "Tipificaciones", "Responsables", "Calidad", "Reportes", "KPIs", "Configuración", "Historial"]
     for indice in range(ventana.menu.count()):
         ventana.menu.setCurrentRow(indice)
     ventana.menu.setCurrentRow(0)
@@ -140,7 +140,7 @@ def test_consulta_ve_solo_sus_pantallas_y_metricas(qtbot, con_datos, coordinador
     ventana = VentanaPrincipal(EstadoApp(con_datos, sesion))
     qtbot.addWidget(ventana)
     assert [ventana.menu.item(i).text() for i in range(ventana.menu.count())] == [
-        "Dashboard", "Novedades", "Estaciones", "Tipificaciones", "Responsables", "Reportes",
+        "Dashboard", "Novedades", "Estaciones", "Tipificaciones", "Responsables", "Calidad", "Reportes",
     ]
     ventana.menu.setCurrentRow(4)
     tabla = ventana.pantallas[4].tabla
@@ -404,6 +404,87 @@ def test_paquete_mensual_desde_reportes(qtbot, con_datos, coordinador, monkeypat
     pantalla.generar_paquete()
     qtbot.waitUntil(lambda: "Paquete generado" in pantalla.resultado.text(), timeout=30000)
     assert abiertos and abiertos[0].toLocalFile().endswith("_correo.eml")
+
+
+def test_ca16_panel_de_evaluacion_escalamiento(qtbot, con_datos, coordinador, monkeypatch):
+    from ui.pantallas import calidad as pantalla_calidad
+    from core.analisis import calidad as cal
+
+    mensajes = []
+    monkeypatch.setattr(pantalla_calidad, "mostrar_info", lambda t, p=None: mensajes.append(t))
+    monkeypatch.setattr(pantalla_calidad, "mostrar_error", lambda t, p=None: mensajes.append("ERROR " + t))
+    panel = pantalla_calidad.PanelEvaluacion(EstadoApp(con_datos, coordinador))
+    qtbot.addWidget(panel)
+    panel.cargar(2)  # ticket escalado dos veces
+    panel.tipo.setCurrentIndex(panel.tipo.findData("ESCALAMIENTO"))
+    panel._cargar_criterios()
+    assert [f.criterio for f in panel.filas] == [f"G-{n:02d}" for n in range(1, 13)] + [f"E-0{n}" for n in range(1, 7)]
+    criticos = [f.criterio for f in panel.filas if f.findChildren(pantalla_calidad.QLabel, None) and
+                any(l.text() == "CRÍTICO" for l in f.findChildren(pantalla_calidad.QLabel))]
+    assert "G-02" in criticos and "E-05" in criticos
+    for fila in panel.filas:
+        if fila.casilla.valor is None:
+            fila.casilla.fijar(cal.CUMPLE)
+    assert "%" in panel.puntaje.text()
+    panel.guardar()
+    assert mensajes and not mensajes[-1].startswith("ERROR"), mensajes
+    assert con_datos.conexion.execute("SELECT COUNT(*) FROM evaluacion WHERE ticket_id = 2").fetchone()[0] == 1
+
+
+def test_pantalla_calidad_por_perfil(qtbot, con_datos, coordinador):
+    from ui.pantallas.calidad import PantallaCalidad
+
+    pantalla = PantallaCalidad(EstadoApp(con_datos, coordinador))
+    qtbot.addWidget(pantalla)
+    pestanas = [pantalla.pestanas.tabText(i) for i in range(pantalla.pestanas.count())]
+    assert pestanas == ["Evaluar tickets", "Histórico por técnico", "Rendimiento", "Comparativo y ranking",
+                        "Incumplimiento por criterio"]
+    pantalla.actualizar()
+    for indice in range(pantalla.pestanas.count()):
+        pantalla.pestanas.setCurrentIndex(indice)
+    assert pantalla.historico.modelo.rowCount() == 8
+    tecnico = sesion_consulta(con_datos.conexion, coordinador, "Tecnico 02")
+    propia = PantallaCalidad(EstadoApp(con_datos, tecnico))
+    qtbot.addWidget(propia)
+    assert [propia.pestanas.tabText(i) for i in range(propia.pestanas.count())] == [
+        "Histórico por técnico", "Rendimiento", "Incumplimiento por criterio"]
+    propia.actualizar()
+    assert propia.tecnico.count() == 1 and propia.tecnico.currentText() == "Tecnico 02"
+
+
+def test_importar_seguimientos_desde_la_pantalla(qtbot, con_datos, coordinador, tmp_path, monkeypatch):
+    from ui.pantallas import importar_seguimientos as panel_seg
+
+    mensajes = []
+    monkeypatch.setattr(panel_seg, "mostrar_info", lambda t, p=None: mensajes.append(t))
+    monkeypatch.setattr(panel_seg, "mostrar_error", lambda t, p=None: mensajes.append("ERROR " + t))
+    ruta = gen.escribir_csv_seguimientos(gen.filas_seguimientos(escenario(), datetime(2026, 10, 3, 23)),
+                                         tmp_path / "seguimientos.csv")
+    panel = panel_seg.PanelSeguimientos(EstadoApp(con_datos, coordinador))
+    qtbot.addWidget(panel)
+    panel.cargar_archivo(ruta)
+    assert panel.perfil().columnas["contenido"] == "Contenido"
+    panel.validar()
+    qtbot.waitUntil(lambda: panel.resultado is not None, timeout=15000)
+    panel.importar()
+    qtbot.waitUntil(lambda: bool(mensajes), timeout=15000)
+    assert mensajes[-1].startswith("Seguimientos importados")
+    assert con_datos.conexion.execute("SELECT COUNT(*) FROM seguimiento").fetchone()[0] > 0
+
+
+def test_detalle_con_boton_evaluar(qtbot, con_datos, coordinador, monkeypatch):
+    from ui.pantallas import calidad as pantalla_calidad
+
+    abiertos = []
+    monkeypatch.setattr(pantalla_calidad.DialogoEvaluacion, "exec", lambda self: abiertos.append(self) or 0)
+    estado = EstadoApp(con_datos, coordinador)
+    detalle = novedades.novedades.detalle(con_datos.conexion, coordinador, 2)
+    dialogo = novedades.DialogoDetalleTicket(detalle, None, estado)
+    qtbot.addWidget(dialogo)
+    boton = next(b for b in dialogo.findChildren(novedades.QPushButton) if b.text() == "Evaluar calidad")
+    assert boton.isEnabled()
+    boton.click()
+    assert abiertos and abiertos[0].panel.ticket_id == 2
 
 
 def test_historial_muestra_los_cambios(qtbot, con_datos, coordinador):

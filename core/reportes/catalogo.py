@@ -268,6 +268,7 @@ def _rep03(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
             "Resueltos sin cerrar (informativo)": m.sin_cerrar_cantidad,
             "Reaperturas": m.reaperturas,
             "Sin actualizar": m.sin_actualizar,
+            "% documentación": m.documentacion,
             "Muestra": est.AVISO_MUESTRA_PEQUENA if m.muestra_pequena else "",
         }
         for m in lista
@@ -275,7 +276,7 @@ def _rep03(solicitud: SolicitudReporte, ahora: datetime) -> Reporte:
         "Técnico", "Turno", "Abiertos al corte", "Abiertos por prioridad", "Atendidos",
         "Soluciones", "Escalamientos", "% escalamiento", "Mediana resolución (h)",
         "P90 resolución (h)", "% SLA", "Resueltos sin cerrar (informativo)", "Reaperturas",
-        "Sin actualizar", "Muestra",
+        "Sin actualizar", "% documentación", "Muestra",
     ])
     carga = {m.nombre: m.abiertos_por_prioridad for m in lista if m.abiertos_por_prioridad}
     notas = [

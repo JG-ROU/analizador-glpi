@@ -23,7 +23,7 @@ def tabla_metricas(lista: list[responsables.MetricasTecnico]) -> pd.DataFrame:
                 "% escalamiento": m.tasa_escalamiento, "Mediana resolución (h) ≈": m.mediana_resolucion,
                 "P90 (h) ≈": m.p90_resolucion, "% SLA ≈": m.sla,
                 "Resueltos sin cerrar (informativo)": m.sin_cerrar_cantidad, "Reaperturas": m.reaperturas,
-                "Sin actualizar": m.sin_actualizar,
+                "Sin actualizar": m.sin_actualizar, "% documentación": m.documentacion,
                 "Muestra": est.AVISO_MUESTRA_PEQUENA if m.muestra_pequena else "", "_id": m.tecnico_id,
             }
             for m in lista

@@ -85,24 +85,24 @@ def ultima_importacion(conexion: sqlite3.Connection) -> datetime | None:
 
 def historial_importaciones(conexion: sqlite3.Connection, limite: int = 200) -> pd.DataFrame:
     filas = conexion.execute(
-        "SELECT i.fecha, i.archivo, u.nombre AS usuario, p.nombre AS perfil, i.filas_leidas, "
+        "SELECT i.fecha, i.tipo, i.archivo, u.nombre AS usuario, p.nombre AS perfil, i.filas_leidas, "
         "i.filas_validas, i.filas_advertencia, i.filas_error, i.fecha_min, i.fecha_max "
         "FROM importacion i LEFT JOIN usuario u ON u.id = i.usuario_id "
-        "LEFT JOIN perfil_importacion p ON p.id = i.perfil_id WHERE i.tipo = ? "
-        "ORDER BY i.id DESC LIMIT ?",
-        (TIPO_TICKETS, limite),
+        "LEFT JOIN perfil_importacion p ON p.id = i.perfil_id ORDER BY i.id DESC LIMIT ?",
+        (limite,),
     ).fetchall()
     return pd.DataFrame(
         [
             {
-                "Fecha": f["fecha"][:16], "Archivo": f["archivo"], "Usuario": f["usuario"],
+                "Fecha": f["fecha"][:16], "Tipo": "Tickets" if f["tipo"] == TIPO_TICKETS else "Seguimientos",
+                "Archivo": f["archivo"], "Usuario": f["usuario"],
                 "Perfil": f["perfil"], "Leídas": f["filas_leidas"], "Válidas": f["filas_validas"],
                 "Con advertencia": f["filas_advertencia"], "Con error": f["filas_error"],
                 "Apertura desde": (f["fecha_min"] or "")[:10], "Apertura hasta": (f["fecha_max"] or "")[:10],
             }
             for f in filas
         ],
-        columns=["Fecha", "Archivo", "Usuario", "Perfil", "Leídas", "Válidas", "Con advertencia",
+        columns=["Fecha", "Tipo", "Archivo", "Usuario", "Perfil", "Leídas", "Válidas", "Con advertencia",
                  "Con error", "Apertura desde", "Apertura hasta"],
     )
 

@@ -35,6 +35,7 @@ class MetricasTecnico:
     sin_cerrar_cantidad: int = 0
     reaperturas: int = 0
     sin_actualizar: int = 0
+    documentacion: float | None = None  # KPI-14 del técnico (Fase 3)
     muestra_pequena: bool = True
 
 
@@ -99,6 +100,7 @@ def _metricas_de(calc: CalculadoraKPI, periodo: Periodo, tecnico: sqlite3.Row) -
         sin_cerrar_cantidad=int(sin_cerrar.numerador or 0),
         reaperturas=calc.contar_eventos(ev.REAPERTURA, periodo, filtros),
         sin_actualizar=int(kpi("KPI-16").numerador or 0),
+        documentacion=kpi("KPI-14").valor,
         muestra_pequena=atendidos.muestra_pequena,
     )
 

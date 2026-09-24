@@ -6,6 +6,7 @@ La interfaz las muestra con FigureCanvasQTAgg; los reportes las guardan como PNG
 
 import io
 
+import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
@@ -164,6 +165,27 @@ def lineas(tabla, titulo: str) -> Figure:
         ejes.plot(list(tabla.index), list(tabla[columna]), marker="o", label=str(columna))
     ejes.legend(fontsize=7, frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
     ejes.set_ylim(bottom=0)
+    return figura
+
+
+def radar(dimensiones: list[str], series: dict[str, list[float | None]], titulo: str) -> Figure:
+    """Radar de 0 a 100 (CAL-07): una línea por técnico y la del promedio del equipo."""
+    figura = Figure(figsize=(4.6, 4.2), dpi=100, layout="constrained")
+    ejes = figura.add_subplot(projection="polar")
+    ejes.set_title(titulo, fontsize=10, color=AZUL_MARINO, pad=14)
+    angulos = np.linspace(0, 2 * np.pi, len(dimensiones), endpoint=False).tolist()
+    angulos += angulos[:1]
+    colores = [AZUL_MARINO, AZUL, "#EF6C00", "#66BB6A"]
+    for (nombre, valores), color in zip(series.items(), colores):
+        puntos = [v or 0 for v in valores]
+        puntos += puntos[:1]
+        estilo = "--" if nombre.startswith("Promedio") else "-"
+        ejes.plot(angulos, puntos, estilo, color=color, label=nombre)
+        ejes.fill(angulos, puntos, color=color, alpha=0.08)
+    ejes.set_xticks(angulos[:-1], dimensiones, fontsize=8)
+    ejes.set_ylim(0, 100)
+    ejes.tick_params(axis="y", labelsize=7)
+    ejes.legend(fontsize=7, frameon=False, loc="upper right", bbox_to_anchor=(1.3, 1.1))
     return figura
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QProgressBar, QPushButton, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QProgressBar, QPushButton, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 from PySide6.QtCore import Qt
 
@@ -23,6 +23,7 @@ from core.importacion import carga, mapeo, validacion
 from core.importacion.validacion import ADVERTENCIA, ERROR, VALIDA, formato_legible
 from ui.componentes.tabla import TablaDatos
 from ui.dialogos import mostrar_error, mostrar_info
+from ui.pantallas.importar_seguimientos import PanelSeguimientos
 from ui.hilos import con_conexion, ejecutar
 
 CODIFICACIONES = ("utf-8", "utf-8-sig", "cp1252", "latin-1")
@@ -140,7 +141,11 @@ class PantallaImportar(QWidget):
         divisor.addWidget(caja_vista)
         divisor.addWidget(caja_historial)
         divisor.setSizes([330, 380, 180])
-        QVBoxLayout(self).addWidget(divisor)
+        self.seguimientos = PanelSeguimientos(estado, al_importar=self.actualizar)
+        pestanas = QTabWidget()
+        pestanas.addTab(divisor, "Tickets")
+        pestanas.addTab(self.seguimientos, "Seguimientos y tareas")
+        QVBoxLayout(self).addWidget(pestanas)
         self._habilitar()
 
     # --- Ciclo de la pantalla ---

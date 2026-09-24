@@ -1,11 +1,13 @@
 """PAN-04: Novedades (tickets recientes y abiertos, accesos rápidos) y PAN-05: Detalle."""
 
+import html
+
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget, QHeaderView, QAbstractItemView,
+    QTableWidgetItem, QTabWidget, QTextBrowser, QVBoxLayout, QWidget, QHeaderView, QAbstractItemView,
 )
 
-from core.analisis import novedades
+from core.analisis import calidad, novedades
 from core.analisis.filtros import Filtros
 from core.analisis.kpis import NOMBRE_PRIORIDAD
 from core.analisis.series import NOMBRE_ESTADO
@@ -14,6 +16,7 @@ from core.errores import ErrorAplicacion
 from core.importacion import eventos as ev
 from ui.componentes.tabla import TablaDatos
 from ui.dialogos import mostrar_error
+from ui.pantallas.calidad import DialogoEvaluacion
 
 TODOS = "(todos)"
 NOMBRE_EVENTO = {
@@ -95,7 +98,7 @@ class PantallaNovedades(QWidget):
         except ErrorAplicacion as error:
             mostrar_error(error.mensaje, self)
             return
-        DialogoDetalleTicket(detalle, self).exec()
+        DialogoDetalleTicket(detalle, self, self.estado).exec()
 
 
 def _tabla(encabezados: list[str], filas: list[list]) -> QTableWidget:
@@ -113,7 +116,7 @@ def _tabla(encabezados: list[str], filas: list[list]) -> QTableWidget:
 class DialogoDetalleTicket(QDialog):
     """PAN-05: datos, cambios detectados y línea de tiempo de eventos."""
 
-    def __init__(self, detalle: novedades.DetalleTicket, padre=None):
+    def __init__(self, detalle: novedades.DetalleTicket, padre=None, estado=None):
         super().__init__(padre)
         t = detalle.ticket
         self.setWindowTitle(f"Ticket {t['id_glpi']}")
@@ -138,34 +141,75 @@ class DialogoDetalleTicket(QDialog):
             texto.setWordWrap(True)
             formulario.addRow(f"{etiqueta}:", texto)
 
-        eventos = QGroupBox("Línea de tiempo (eventos detectados)")
-        QVBoxLayout(eventos).addWidget(_tabla(
+        pestanas = QTabWidget()
+        pestanas.addTab(_tabla(
             ["Fecha", "Evento", "Técnico", "Origen"],
             [[e["fecha_evento"][:16], NOMBRE_EVENTO[e["tipo"]], e["tecnico"] or "—", NOMBRE_ORIGEN[e["origen"]]]
              for e in detalle.eventos],
-        ))
-        cambios = QGroupBox("Cambios detectados entre importaciones")
-        QVBoxLayout(cambios).addWidget(_tabla(
+        ), "Eventos detectados")
+        pestanas.addTab(_tabla(
             ["Detectado", "Campo", "Antes", "Después", "Archivo"],
             [[c["detectado_en"][:16], c["campo"], c["valor_anterior"], c["valor_nuevo"], c["archivo"]]
              for c in detalle.cambios],
-        ))
-        pendientes = QLabel(
-            "Seguimientos con etiquetas y evaluación de calidad: disponibles en la Fase 3."
-        )
-        pendientes.setObjectName("nota")
+        ), "Cambios entre importaciones")
+        pestanas.addTab(_seguimientos(detalle.seguimientos), f"Seguimientos ({len(detalle.seguimientos)})")
+        pestanas.addTab(_evaluacion(detalle.evaluacion), "Calidad")
         evaluar = QPushButton("Evaluar calidad")
-        evaluar.setEnabled(False)
-        evaluar.setToolTip("Disponible en la Fase 3")
+        puede = estado is not None and estado.sesion.es_coordinador
+        evaluar.setEnabled(puede)
+        evaluar.setToolTip("" if puede else "Solo el coordinador evalúa la calidad.")
+        evaluar.clicked.connect(lambda: self._evaluar(estado, t["id_glpi"]))
         cerrar = QPushButton("Cerrar")
         cerrar.clicked.connect(self.accept)
         botones = QHBoxLayout()
-        botones.addWidget(pendientes)
         botones.addStretch()
         botones.addWidget(evaluar)
         botones.addWidget(cerrar)
         diseno = QVBoxLayout(self)
         diseno.addWidget(datos)
-        diseno.addWidget(eventos)
-        diseno.addWidget(cambios)
+        diseno.addWidget(pestanas, 1)
         diseno.addLayout(botones)
+
+    def _evaluar(self, estado, ticket_id: int) -> None:
+        DialogoEvaluacion(estado, ticket_id, self).exec()
+
+
+def _seguimientos(notas: list[dict]) -> QWidget:
+    texto = QTextBrowser()
+    if not notas:
+        texto.setHtml("<i>No hay seguimientos importados para este ticket.</i>")
+        return texto
+    partes = []
+    for n in notas:
+        etiqueta = (f"<span style='background:#1F3A5F;color:white;padding:0 4px'>[{n['etiqueta']}]</span> "
+                    if n["etiqueta"] else "")
+        contenido = html.escape(n["contenido"]).replace("\n", "<br>")
+        partes.append(f"<p><b>{n['fecha'][:16]}</b> · {n['tipo'].capitalize()} · {html.escape(n['autor'] or '')}<br>"
+                      f"{etiqueta}{contenido}</p>")
+    texto.setHtml("<hr>".join(partes))
+    return texto
+
+
+def _evaluacion(evaluacion) -> QWidget:
+    if evaluacion is None:
+        etiqueta = QLabel("Sin evaluación de calidad.")
+        etiqueta.setObjectName("nota")
+        return etiqueta
+    cabecera, detalle = evaluacion
+    contenedor = QWidget()
+    diseno = QVBoxLayout(contenedor)
+    diseno.addWidget(QLabel(
+        f"Versión {cabecera['version']} · {cabecera['fecha'][:16]} · {cabecera['auditor'] or '—'} · "
+        f"{NOMBRE_TIPO_CASO[cabecera['tipo_caso']]} · {cabecera['porcentaje']} % · "
+        f"{calidad.NOMBRE_RESULTADO[cabecera['resultado']]} · críticos fallidos: {cabecera['criticos_fallidos']}"))
+    if cabecera["retroalimentacion"]:
+        retro = QLabel(f"Retroalimentación: {cabecera['retroalimentacion']}")
+        retro.setWordWrap(True)
+        diseno.addWidget(retro)
+    textos = {calidad.CUMPLE: "✔ Cumple", calidad.NO_CUMPLE: "✖ No cumple", calidad.NO_APLICA: "— No aplica"}
+    diseno.addWidget(_tabla(
+        ["Criterio", "Descripción", "Resultado", "Origen", "Nota"],
+        [[f["criterio_id"] + (" (CRÍTICO)" if f["critico"] else ""), f["descripcion"], textos[f["resultado"]],
+          f["origen"], f["nota"]] for f in detalle],
+    ))
+    return contenedor

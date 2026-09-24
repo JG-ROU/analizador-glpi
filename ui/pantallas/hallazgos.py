@@ -160,4 +160,4 @@ class DialogoTicketsHallazgo(QDialog):
         except ErrorAplicacion as error:
             mostrar_error(error.mensaje, self)
             return
-        DialogoDetalleTicket(detalle, self).exec()
+        DialogoDetalleTicket(detalle, self, self.estado).exec()

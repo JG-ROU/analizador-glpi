@@ -5,12 +5,13 @@ sin técnico no ve tickets individuales (RNF-07).
 """
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 import pandas as pd
 
 from core import parametros, reloj, seguridad
+from core.analisis import calidad
 from core.analisis.filtros import Filtros
 from core.analisis.kpis import NOMBRE_PRIORIDAD
 from core.analisis.periodos import Periodo
@@ -46,6 +47,8 @@ class DetalleTicket:
     tecnicos: list[str]
     cambios: list[dict]
     eventos: list[dict]
+    seguimientos: list[dict] = field(default_factory=list)
+    evaluacion: tuple | None = None  # (evaluación vigente, detalle) si existe y la sesión puede verla
 
 
 def restriccion_tickets(conexion: sqlite3.Connection, sesion: Sesion) -> tuple[str, list]:
@@ -172,4 +175,10 @@ def detalle(conexion: sqlite3.Connection, sesion: Sesion, id_glpi: int) -> Detal
             (id_glpi,),
         )
     ]
-    return DetalleTicket(dict(fila), tecnicos, cambios, eventos)
+    seguimientos = [dict(f) for f in conexion.execute(
+        "SELECT * FROM seguimiento WHERE ticket_id = ? ORDER BY fecha, id", (id_glpi,))]
+    try:
+        evaluacion = calidad.evaluacion_vigente(conexion, sesion, id_glpi)
+    except ErrorPermiso:
+        evaluacion = None  # consulta: solo ve las evaluaciones de los tickets donde es técnico principal
+    return DetalleTicket(dict(fila), tecnicos, cambios, eventos, seguimientos, evaluacion)
