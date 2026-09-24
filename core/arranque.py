@@ -1,14 +1,12 @@
-"""Secuencia de arranque sin interfaz: config.ini, carpetas, logs y base de datos.
-
-El respaldo diario se agrega en T04.
-"""
+"""Secuencia de arranque sin interfaz: config.ini, carpetas, logs, base de datos
+y respaldo diario."""
 
 import logging
 import sqlite3
 from dataclasses import dataclass
 
 from core import config, registro, rutas
-from core.db import base_datos
+from core.db import base_datos, respaldo
 from core.version import VERSION
 
 log = logging.getLogger(__name__)

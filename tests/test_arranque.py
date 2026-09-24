@@ -1,4 +1,5 @@
 import logging
+import shutil
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -18,6 +19,7 @@ def exe_simulado(tmp_path, monkeypatch):
     recursos = carpeta_exe / "_internal"
     recursos.mkdir(parents=True)
     (recursos / "config.ini.ejemplo").write_bytes((RAIZ / "config.ini.ejemplo").read_bytes())
+    shutil.copytree(RAIZ / "spec" / "catalogos", recursos / "spec" / "catalogos")
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(carpeta_exe / "AnalizadorGLPI.exe"))
     monkeypatch.setattr(sys, "_MEIPASS", str(recursos), raising=False)
@@ -45,6 +47,7 @@ def test_primer_arranque_crea_config_carpetas_y_bd_junto_al_exe(exe_simulado):
         for carpeta in ("data", "data/respaldos", "exportaciones", "logs"):
             assert (base / carpeta).is_dir(), carpeta
         assert (base / "data" / "analizador.db").is_file()
+        assert len(list((base / "data" / "respaldos").glob("analizador_diario_*.db"))) == 1
         assert contexto.conexion.execute("PRAGMA user_version").fetchone()[0] >= 1
         contenido = (base / "logs" / "app.log").read_text(encoding="utf-8")
         assert "Inicio de Analizador GLPI" in contenido

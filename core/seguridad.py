@@ -6,6 +6,7 @@ Todos los usuarios tienen PIN; solo se guarda su hash bcrypt.
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 import bcrypt
 
@@ -21,6 +22,44 @@ LONGITUD_MAXIMA_PIN = 12
 RONDAS_BCRYPT = 12
 
 MENSAJE_SOLO_COORDINADOR = "Esta acción solo la puede hacer el coordinador."
+
+
+INTENTOS_SIN_ESPERA = 5
+ESPERA_INICIAL_SEGUNDOS = 30
+ESPERA_MAXIMA_SEGUNDOS = 300
+
+
+class ControlIntentos:
+    """Espera creciente después de varios PIN incorrectos seguidos.
+
+    No bloquea la cuenta: un bloqueo total podría dejar al coordinador sin acceso.
+    Tras INTENTOS_SIN_ESPERA fallos, cada fallo exige esperar el doble que el
+    anterior (30 s, 60 s, 120 s…, hasta 5 minutos). Un acierto reinicia la cuenta.
+    """
+
+    def __init__(self):
+        self.fallos = 0
+        self.bloqueado_hasta: datetime | None = None
+
+    def segundos_restantes(self, ahora: datetime) -> int:
+        if self.bloqueado_hasta is None or ahora >= self.bloqueado_hasta:
+            return 0
+        return int((self.bloqueado_hasta - ahora).total_seconds()) + 1
+
+    def registrar_fallo(self, ahora: datetime) -> int:
+        """Devuelve los segundos que hay que esperar antes del próximo intento."""
+        self.fallos += 1
+        if self.fallos < INTENTOS_SIN_ESPERA:
+            return 0
+        espera = min(
+            ESPERA_INICIAL_SEGUNDOS * 2 ** (self.fallos - INTENTOS_SIN_ESPERA), ESPERA_MAXIMA_SEGUNDOS
+        )
+        self.bloqueado_hasta = ahora + timedelta(seconds=espera)
+        return espera
+
+    def registrar_acierto(self) -> None:
+        self.fallos = 0
+        self.bloqueado_hasta = None
 
 
 @dataclass(frozen=True)

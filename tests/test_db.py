@@ -202,7 +202,7 @@ def test_semilla_de_kpis_predefinidos(bd):
     ).fetchall()
     assert [f["codigo"] for f in filas] == [
         "KPI-01", "KPI-02", "KPI-03", "KPI-04", "KPI-05", "KPI-06", "KPI-07", "KPI-08",
-        "KPI-16", "KPI-17",
+        "KPI-09", "KPI-10", "KPI-11", "KPI-12", "KPI-13", "KPI-14", "KPI-15", "KPI-16", "KPI-17",
     ]
     por_codigo = {f["codigo"]: f for f in filas}
     assert all(f["predefinido"] == 1 and f["calculo_especial"] == f["codigo"] for f in filas)

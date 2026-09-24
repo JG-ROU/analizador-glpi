@@ -65,7 +65,7 @@ Ejemplo con datos ficticios, tal como queda en el archivo (visto con un editor d
 
 ## IMP-03 – Importación incremental e historial de cambios
 - **Clave:** `id_glpi`. Si el ticket ya existe, se actualiza.
-- **Orden de los archivos:** si la fila trae una última actualización **anterior o igual** a la guardada, no se actualiza. Así, importar un archivo viejo después de uno nuevo no hace retroceder los datos.
+- **Orden de los archivos:** si la fila trae una última actualización **anterior** a la guardada, no se actualiza. Así, importar un archivo viejo después de uno nuevo no hace retroceder los datos. Si la fecha es **igual**, solo se actualiza cuando los datos del ticket cambiaron: GLPI registra la hora sin segundos, y un cambio hecho en el mismo minuto de la exportación anterior no debe perderse.
 - **Historial de cambios:** por cada ticket actualizado se guardan en `ticket_cambio` los cambios de **estado, técnico y prioridad** frente a la importación anterior.
 - **Eventos:** los cambios de estado generan eventos según IMP-06.
 - **Duplicados:** si se importa dos veces el mismo archivo (mismo hash), el sistema avisa y no duplica nada.
@@ -116,6 +116,19 @@ Como el CSV solo trae el **estado actual**, los eventos se detectan comparando e
 | tipo_caso | Inferido: Crítico P1 si `es_p1`; Escalamiento si tiene algún evento ESCALAMIENTO; si no, Gestión. El usuario puede corregirlo en la evaluación (Fase 3); la corrección manual no se sobrescribe al reimportar |
 
 **Derivados retirados, porque no hay columna de origen:** codigo_categoria, familia, es_hoja, cliente, estacion, causa_codigo y tiene_tipo_solucion. Si en el futuro la exportación incluye Categoría, Solución, Tipo de solución, Grupo asignado o fechas de solución y cierre, se reincorporan con una migración.
+
+## IMP-07 – Clasificación manual (Fase 2)
+La exportación no trae estación, categoría, causa ni tipo de solución. El coordinador los asigna después de importar, en la pantalla **PAN-15 Clasificación**:
+- **Listas desplegables:**
+  - estación: catálogo de estaciones editable en Configuración, con cliente e «incluir en SEGMOV»;
+  - categoría: las 62 hojas de `catalogos/tipificacion.csv`;
+  - causa: `catalogos/causas.csv`;
+  - tipo de solución: `catalogos/tipos_solucion.csv`.
+- **Lista de pendientes:** por defecto se muestran los tickets sin clasificar, primero los resueltos. Se puede asignar un mismo valor a varios tickets seleccionados a la vez.
+- **Sugerir desde Ubicación (opcional):** propone la estación cuyo nombre coincide (sin mayúsculas ni tildes) con el último nivel de la Ubicación. Solo se guarda cuando el coordinador confirma.
+- **Separada de GLPI:** la clasificación se guarda en `ticket_clasificacion`. Las reimportaciones nunca la modifican.
+- **Historial:** cada cambio queda registrado con el valor anterior y el nuevo.
+- **Derivados:** `familia` = primeras 3 letras del código de categoría; `es_hoja` = la categoría es una hoja del catálogo (todas las del catálogo lo son).
 
 ## IMP-05 – Datos personales
 - El CSV trae nombres de autores y técnicos.

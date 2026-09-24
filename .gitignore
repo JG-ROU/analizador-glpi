@@ -16,3 +16,6 @@ build/
 dist/
 Thumbs.db
 .DS_Store
+*.spec
+dist_onefile/
+build_onefile/
