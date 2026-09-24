@@ -1,7 +1,6 @@
-"""Notificaciones de la aplicación offline (spec 09): NOT-01, NOT-02, NOT-03 y NOT-05.
+"""Notificaciones de la aplicación offline (spec 09): NOT-01 a NOT-05.
 
-NOT-04 (evaluaciones pendientes) llega con la Fase 3. Las notificaciones se
-calculan al vuelo; no se guardan.
+Se calculan al vuelo; no se guardan.
 """
 
 import sqlite3
@@ -9,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from core import parametros, reloj
-from core.analisis import hallazgos, periodos, semaforo
+from core.analisis import calidad_metricas, hallazgos, periodos, semaforo
 from core.analisis.kpis import CalculadoraKPI
 from core.importacion import carga
 from core.seguridad import Sesion
@@ -66,9 +65,21 @@ def _not05(conexion: sqlite3.Connection, sesion: Sesion, ahora: datetime) -> lis
     return [Notificacion("NOT-05", "ALTA", f"KPI crítico en rojo en {mes.etiqueta}: {', '.join(rojos)}.", "Dashboard")]
 
 
+def _not04(conexion: sqlite3.Connection, sesion: Sesion, ahora: datetime) -> list[Notificacion]:
+    """Los lunes: tickets de la muestra de la semana anterior sin evaluar (CAL-04)."""
+    if not sesion.es_coordinador or ahora.weekday() != 0:
+        return []
+    pendientes_calidad = calidad_metricas.evaluaciones_pendientes(conexion, ahora)
+    if not pendientes_calidad:
+        return []
+    return [Notificacion("NOT-04", "MEDIA", f"Hay {pendientes_calidad} ticket(s) de la muestra semanal sin evaluar.",
+                         "Calidad")]
+
+
 def pendientes(conexion: sqlite3.Connection, sesion: Sesion, momento: str, ahora: datetime | None = None) -> list[Notificacion]:
-    """NOT-01, NOT-02 y NOT-03 al iniciar; NOT-02 y NOT-05 después de importar."""
+    """NOT-01 a NOT-04 al iniciar; NOT-02 y NOT-05 después de importar."""
     ahora = ahora or reloj.ahora()
     if momento == AL_INICIAR:
-        return _not01(conexion, ahora) + _not02(conexion, sesion) + _not03(conexion, sesion, ahora)
+        return (_not01(conexion, ahora) + _not02(conexion, sesion) + _not03(conexion, sesion, ahora)
+                + _not04(conexion, sesion, ahora))
     return _not02(conexion, sesion) + _not05(conexion, sesion, ahora)
